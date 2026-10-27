@@ -61,7 +61,8 @@ Sources/SwiftHTTPServiceNIO/         the transport (to build)
 - [ ] `ServiceConfiguration` (with the transport, being built in a parallel worktree).
 - [ ] The transport target: HTTP/1.1 server, limits, timeouts, connection cap, graceful shutdown, TLS.
 - [ ] Rate limiter, request id, access log middleware.
-- [ ] A GitHub remote (not created: outward-facing).
+- [ ] Migrate the other hand-rolled servers, after this kit has served real traffic: `project/plans/proposals/MigrationPlan_HandRolledServers.md`.
+- [x] A GitHub remote: `jpurnell/SwiftHTTPService` (private).
 
 ---
 
