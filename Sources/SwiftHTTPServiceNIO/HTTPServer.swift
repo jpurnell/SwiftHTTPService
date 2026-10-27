@@ -44,6 +44,9 @@ public struct BoundAddress: Sendable, Equatable {
 /// An HTTP/1.1 server over TCP, with TLS if configured.
 ///
 /// ```swift
+/// import SwiftHTTPService
+/// import SwiftHTTPServiceNIO
+///
 /// let server = HTTPServer(configuration: try ServiceConfiguration(port: 8080)) { request in
 ///     try .json(["hello": "world"])
 /// }

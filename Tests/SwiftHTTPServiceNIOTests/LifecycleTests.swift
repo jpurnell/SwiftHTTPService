@@ -12,6 +12,7 @@ import SwiftHTTPService
 @Suite("Server lifecycle", .serialized)
 struct LifecycleTests {
 
+    @discardableResult
     private func withGroup<T>(_ body: (MultiThreadedEventLoopGroup) async throws -> T) async throws -> T {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         defer { group.shutdownGracefully { _ in } }
@@ -60,6 +61,9 @@ struct LifecycleTests {
             for _ in 0..<4 { group.addTask { await running.server.shutdown() } }
         }
         await running.server.shutdown()
+        #expect(never.reloadTLS() == nil)
+        #expect(running.server.reloadTLS() == nil)
+        await #expect(throws: HTTPServerError.alreadyStarted) { try await running.server.start() }
     }
 
     @Test("After shutdown the port is closed: a new connection is refused")
@@ -107,17 +111,16 @@ struct LifecycleTests {
         let running = try await startServer(limits: Limits(shutdownGrace: .seconds(30)))
         try await withGroup { group in
             let client = try await RawClient.connect(to: running.address, group: group)
-            let started = ContinuousClock.now
+            // A 30 s grace period: if shutdown waited for it, this test would not finish.
             await running.server.shutdown()
-            #expect(ContinuousClock.now - started < .seconds(5))
             #expect(try await client.waitUntilClosed())
         }
     }
 
-    @Test("When the grace period ends, a request that never finishes is cut off")
+    @Test("During the grace period a request that never finishes is left alone; when it ends, it is cut off")
     func graceExpires() async throws {
         let gate = Gate()   // never opened
-        let running = try await startServer(limits: Limits(shutdownGrace: .milliseconds(300))) { _ in
+        let running = try await startServer(limits: Limits(shutdownGrace: .seconds(2))) { _ in
             await gate.wait()
             return Response(status: .ok)
         }
@@ -125,11 +128,18 @@ struct LifecycleTests {
             let client = try await RawClient.connect(to: running.address, group: group)
             try await client.send("GET /x HTTP/1.1\r\nHost: h\r\n\r\n")
             try await Task.sleep(for: .milliseconds(100))
-            let started = ContinuousClock.now
-            await running.server.shutdown()
-            let elapsed = ContinuousClock.now - started
-            #expect(elapsed >= .milliseconds(250), "ended before the grace period: \(elapsed)")
-            #expect(elapsed < .seconds(10))
+            let finished = FlagBox()
+            let shutdown = Task {
+                await running.server.shutdown()
+                finished.set()
+            }
+            try await Task.sleep(for: .milliseconds(300))
+            // Well inside the two-second grace period: the request is still being waited for.
+            #expect(!finished.value, "shutdown gave up before the grace period ended")
+            #expect(!client.isClosed)
+            // Then the grace period ends and the connection is cut, so shutdown returns without the gate opening.
+            await shutdown.value
+            #expect(finished.value)
             #expect(try await client.waitUntilClosed())
         }
         await gate.open()
@@ -275,7 +285,7 @@ struct LifecycleTests {
             return
         }
         #expect(path == material.keyPath)
-        #expect(mode & 0o077 != 0)
+        #expect(mode & 0o777 == 0o644)
     }
 
     @Test("A key that does not belong to the certificate is refused")
@@ -434,8 +444,8 @@ struct LifecycleTests {
 }
 
 /// A flag a test can read while a task sets it.
+// Justification: a single Bool behind a lock.
 final class FlagBox: @unchecked Sendable {
-    // Justification: a single Bool behind a lock.
     private let lock = NSLock()
     private var flag = false
     func set() { lock.lock(); flag = true; lock.unlock() }

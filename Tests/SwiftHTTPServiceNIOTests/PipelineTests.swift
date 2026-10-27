@@ -90,7 +90,7 @@ struct ServingTests {
             fields[.connection] = "upgrade"
             fields[.date] = "yesterday"
             fields[.transferEncoding] = "chunked"
-            fields[HTTPField.Name("X-Mine")!] = "kept"
+            fields[try #require(HTTPField.Name("X-Mine"))] = "kept"
             return Response(status: .ok, headers: fields, body: Data("abc".utf8))
         }
         try await harness.send("GET /x HTTP/1.1\r\nHost: h\r\n\r\n")

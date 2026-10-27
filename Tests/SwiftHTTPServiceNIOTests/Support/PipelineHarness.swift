@@ -82,7 +82,7 @@ final class PipelineHarness: Sendable {
         let terminator = Data("\r\n\r\n".utf8)
         guard let end = data.range(of: terminator) else { return nil }
         let headText = String(decoding: data[data.startIndex..<end.lowerBound], as: UTF8.self)
-        var lines = headText.components(separatedBy: "\r\n")
+        var lines = headText.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
         let statusLine = lines.removeFirst()
         let headers: [(name: String, value: String)] = lines.compactMap { line in
             guard let colon = line.firstIndex(of: ":") else { return nil }

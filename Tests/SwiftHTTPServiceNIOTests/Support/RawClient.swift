@@ -4,13 +4,14 @@ import NIOCore
 import NIOPosix
 import NIOTLS
 import SwiftHTTPService
+import Testing
 import SwiftTLSKit
 import SwiftTLSKitTestSupport
 @testable import SwiftHTTPServiceNIO
 
 /// Collects what a connection delivers, whether it has closed, and what TLS negotiated.
+// Justification: the only mutable state is behind NIOLockedValueBox.
 final class Collector: ChannelInboundHandler, @unchecked Sendable {
-    // Justification: the only mutable state is behind NIOLockedValueBox.
     typealias InboundIn = ByteBuffer
     let received = NIOLockedValueBox(Data())
     let closed = NIOLockedValueBox(false)
@@ -104,8 +105,8 @@ struct RawClient: Sendable {
 ///
 /// SwiftTLSKitTestSupport makes the certificates when the test runs, so no key is checked in. The key file
 /// is written with mode 0600, because SwiftTLSKit refuses a private key that others can read.
+// Justification: a test owns one of these on one task; `authority` is replaced only by `renew`.
 final class TestTLS: @unchecked Sendable {
-    // Justification: a test owns one of these on one task; `authority` is replaced only by `renew`.
     let directory: URL
     private(set) var authority: TestAuthority
     let chainPath: String
@@ -131,7 +132,7 @@ final class TestTLS: @unchecked Sendable {
     /// Writes any leaf over the files, with the permissions a good key has.
     func write(_ leaf: TestLeaf, keyMode: Int = 0o600) throws {
         try Data(leaf.chainPEM.utf8).write(to: URL(fileURLWithPath: chainPath))
-        try? FileManager.default.removeItem(atPath: keyPath)
+        if FileManager.default.fileExists(atPath: keyPath) { try FileManager.default.removeItem(atPath: keyPath) }
         FileManager.default.createFile(
             atPath: keyPath, contents: Data(leaf.privateKeyPEM.utf8), attributes: [.posixPermissions: keyMode])
     }
@@ -140,8 +141,15 @@ final class TestTLS: @unchecked Sendable {
         try authority.clientContext(applicationProtocols: applicationProtocols)
     }
 
+    /// Removes the temporary directory. A test that fails before this runs leaves it in the system temporary folder.
     func cleanUp() {
-        try? FileManager.default.removeItem(at: directory)
+        if FileManager.default.fileExists(atPath: directory.path) {
+            do {
+                try FileManager.default.removeItem(at: directory)
+            } catch {
+                Issue.record("could not remove \(directory.path)")
+            }
+        }
     }
 }
 

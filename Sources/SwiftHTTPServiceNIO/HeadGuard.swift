@@ -39,9 +39,8 @@ enum GuardSignal: Sendable, Equatable {
 ///
 /// Bytes after a head's blank line (a body, or a pipelined request) are not counted here: the body has its
 /// own limit in the connection handler, and the handler refuses pipelining.
+// Justification: a channel handler is confined to its event loop and `@unchecked Sendable` only lets NIOLoopBound hold it.
 final class HeadGuard: ChannelDuplexHandler, @unchecked Sendable {
-    // Justification: a channel handler is confined to its channel's event loop. Every method below runs
-    // there, and `@unchecked Sendable` is only so a handler can be named in an `EventLoopFuture` closure.
     typealias InboundIn = ByteBuffer
     typealias InboundOut = ByteBuffer
     typealias OutboundIn = ByteBuffer

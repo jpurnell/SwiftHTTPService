@@ -24,7 +24,11 @@ struct DirectHandlerTests {
             return try await handler(request)
         }
         let channel = NIOAsyncTestingChannel()
-        try await channel.pipeline.addHandlers([HTTPResponseEncoder(), ConnectionHandler(server: context)])
+        try await channel.eventLoop.submit {
+            let operations = channel.pipeline.syncOperations
+            try operations.addHandler(HTTPResponseEncoder())
+            try operations.addHandler(ConnectionHandler(server: context))
+        }.get()
         try await channel.connect(to: SocketAddress(ipAddress: "192.0.2.9", port: 1))
         return (channel, recorder)
     }
@@ -36,7 +40,7 @@ struct DirectHandlerTests {
             while let buffer = try await channel.readOutbound(as: ByteBuffer.self) {
                 data.append(contentsOf: buffer.readableBytesView)
             }
-            if let line = String(data: data, encoding: .utf8)?.split(separator: "\r\n").first {
+            if let line = String(data: data, encoding: .utf8)?.split(whereSeparator: \.isNewline).first {
                 let parts = line.split(separator: " ")
                 if parts.count > 1, let code = Int(parts[1]) { return code }
             }

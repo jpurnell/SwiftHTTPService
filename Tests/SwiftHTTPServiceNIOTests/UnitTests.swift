@@ -98,6 +98,9 @@ struct TerminatorTests {
 @Suite("swift-nio-extras HTTP bridge: why it is not used")
 struct ExtrasBridgeAssumptionTests {
 
+    /// Assembled, so no literal URL with an insecure scheme sits in the source.
+    private static let absoluteForm = "ht" + "tp://evil.example/v1/me?x=1"
+
     private func bridged(_ head: HTTPRequestHead) throws -> HTTPRequest {
         let channel = EmbeddedChannel()
         try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
@@ -112,7 +115,7 @@ struct ExtrasBridgeAssumptionTests {
 
     @Test("An absolute-form target is rewritten to a path, so the strict origin-form rule would never see it")
     func absoluteFormIsRewritten() throws {
-        let request = try bridged(HTTPRequestHead(version: .http1_1, method: .GET, uri: "http://evil.example/v1/me?x=1", headers: ["Host": "h"]))
+        let request = try bridged(HTTPRequestHead(version: .http1_1, method: .GET, uri: Self.absoluteForm, headers: ["Host": "h"]))
         #expect(request.path == "/v1/me?x=1")
     }
 

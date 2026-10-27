@@ -21,9 +21,8 @@ import SwiftHTTPService
 /// request and waiting between requests; the time a handler takes is the handler's. A connection whose
 /// handler is stuck stays open (and counts toward the connection cap) until the handler returns, the peer
 /// closes it, or the grace period of a shutdown ends.
+// Justification: a channel handler is confined to its event loop and `@unchecked Sendable` only lets NIOLoopBound hold it.
 final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
-    // Justification: a channel handler is confined to its channel's event loop; every method and every
-    // callback it schedules runs there. `@unchecked Sendable` only lets `NIOLoopBound` hold it.
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
@@ -54,6 +53,11 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
 
     init(server: ServerContext) {
         self.server = server
+    }
+
+    deinit {
+        // A handler that goes away with a request still running must not leave its task behind.
+        inFlight?.cancel()
     }
 
     // MARK: Inbound parts
@@ -95,9 +99,8 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
             return
         }
         // The target is checked now, before any body is read, so a refused target costs nothing.
-        do {
-            _ = try Request(method: validated.method, target: head.uri, headers: validated.fields, body: Data())
-        } catch {
+        let parsed = Result { try Request(method: validated.method, target: head.uri, headers: validated.fields, body: Data()) }
+        guard case .success = parsed else {
             refuse(.malformedTarget, context: context)
             return
         }
@@ -193,12 +196,12 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     // MARK: Running the handler
 
     private func dispatch(_ receiving: Receiving, context: ChannelHandlerContext) {
-        let request: Request
-        do {
-            request = try Request(
+        let built = Result {
+            try Request(
                 method: receiving.method, target: receiving.target, headers: receiving.fields,
                 body: Data(receiving.body.readableBytesView), remoteAddress: context.remoteAddress?.ipAddress)
-        } catch {
+        }
+        guard case .success(let request) = built else {
             refuse(.malformedTarget, context: context)
             return
         }
