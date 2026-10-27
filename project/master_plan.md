@@ -40,7 +40,10 @@ Sources/SwiftHTTPService/            the core, no NIO
 ├── Context.swift                    typed values middleware attach
 ├── Response.swift                   json, empty, notModified, problem
 ├── Problem.swift                    RFC 9457
-└── Middleware.swift                 Handler, Middleware, wrap(_:with:)
+├── Middleware.swift                 Handler, Middleware, wrap(_:with:)
+├── Router.swift                     patterns, specificity, 404/405, HEAD
+├── Conditional.swift                EntityTag, If-None-Match, 304
+└── Health.swift                     Router.addHealth()
 Sources/SwiftHTTPServiceNIO/         the transport (to build)
 ```
 
@@ -54,7 +57,8 @@ Sources/SwiftHTTPServiceNIO/         the transport (to build)
 - [x] `Context`, `Response`, `Problem`, `Handler`, `Middleware`, `wrap`. 33 tests; hand mutations caught.
 
 ### What's Next
-- [ ] `Router` (patterns, specificity, 404/405, HEAD), the `Conditional` helper, `ServiceConfiguration`.
+- [x] `Router`, `Conditional`, `Router.addHealth()`: 66 tests, mutations caught.
+- [ ] `ServiceConfiguration` (with the transport, being built in a parallel worktree).
 - [ ] The transport target: HTTP/1.1 server, limits, timeouts, connection cap, graceful shutdown, TLS.
 - [ ] Rate limiter, request id, access log middleware.
 - [ ] A GitHub remote (not created: outward-facing).
@@ -95,7 +99,8 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 
 ### Phase 1: The core
 - [x] Request, Context, Response, Problem, Middleware
-- [ ] Router, Conditional, ServiceConfiguration
+- [x] Router, Conditional, health route
+- [ ] ServiceConfiguration
 
 ### Phase 2: The transport
 - [ ] HTTP/1.1, limits, graceful shutdown, then TLS
@@ -105,4 +110,4 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 
 ---
 
-**Last Updated:** 2026-10-27 (created; the core's request, response, problem and middleware types)
+**Last Updated:** 2026-10-27 (router, conditional requests and health route added to the core)
