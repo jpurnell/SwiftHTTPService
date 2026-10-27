@@ -252,6 +252,16 @@ struct RefusalTests {
         #expect(!result.handlerRan)
     }
 
+    @Test("A malformed target is refused as soon as the head is read, before any body is waited for")
+    func targetRefusedBeforeBody() async throws {
+        let harness = try await PipelineHarness(handler: ok())
+        // The head promises ten bytes of body that never come.
+        try await harness.send("POST /a/../b HTTP/1.1\r\nHost: h\r\nContent-Length: 10\r\n\r\n")
+        let response = try #require(try await harness.readResponse(timeout: .seconds(2)))
+        #expect(response.status == 400)
+        #expect(try await harness.isClosed())
+    }
+
     @Test("A target that is not origin-form is refused the same way", arguments: ["*", "example.org:443", "/a%zz", "/a#b"])
     func nonOriginForm(_ target: String) async throws {
         let result = try await refused("GET \(target) HTTP/1.1\r\nHost: h\r\n\r\n")

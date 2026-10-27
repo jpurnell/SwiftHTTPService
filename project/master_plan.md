@@ -57,7 +57,7 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
 ### Transport (branch `transport`)
 - [x] `ServiceConfiguration`, `Limits`, `TLSFiles`: validated, nothing clamped, errors never carry a value.
 - [x] `SwiftHTTPServiceNIO`: `HTTPServer` (start, reload, graceful shutdown), every limit enforced,
-  request-smuggling hygiene, fixed refusals, connection cap, real timers. 90 tests; hand mutations of every
+  request-smuggling hygiene, fixed refusals, connection cap, real timers. 91 tests; hand mutations of every
   limit and rule, the survivors turned into tests or the redundant code removed.
 - [x] TLS is the owner's SwiftTLSKit (path dependency on `../SwiftTLSKit`, transport target only): typed
   identity errors, reload without a restart, `BindExposure` refusing exposed plaintext.

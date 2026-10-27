@@ -45,7 +45,7 @@ All notable changes to this project are recorded here. The format follows
 - Graceful shutdown is NIOExtras' `ServerQuiescingHelper`: the listening socket closes, every open connection
   is told to quiesce, an idle one closes at once, a busy one finishes its request and closes, and after
   `shutdownGrace` whatever is left is closed. Idempotent, and safe from several tasks.
-- 90 transport tests: byte-level pipeline tests on `NIOAsyncTestingChannel`, the connection handler tested
+- 91 transport tests: byte-level pipeline tests on `NIOAsyncTestingChannel`, the connection handler tested
   directly with no parser in front (its own rules must not depend on NIO's), and real loopback sockets for
   the lifecycle, the cap, real timers, TLS, reload, and the typed identity errors. Certificates are generated
   when the tests run (SwiftTLSKitTestSupport), so no key is checked in. Ten consecutive runs of the whole
