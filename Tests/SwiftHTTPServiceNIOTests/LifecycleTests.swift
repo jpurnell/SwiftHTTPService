@@ -444,7 +444,7 @@ struct LifecycleTests {
 }
 
 /// A flag a test can read while a task sets it.
-// Justification: a single Bool behind a lock.
+// Justification: the only mutable state is one Bool, and every read and write of it holds the same lock.
 final class FlagBox: @unchecked Sendable {
     private let lock = NSLock()
     private var flag = false

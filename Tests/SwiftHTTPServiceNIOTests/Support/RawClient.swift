@@ -10,7 +10,7 @@ import SwiftTLSKitTestSupport
 @testable import SwiftHTTPServiceNIO
 
 /// Collects what a connection delivers, whether it has closed, and what TLS negotiated.
-// Justification: the only mutable state is behind NIOLockedValueBox.
+// Justification: every piece of mutable state here is held in a NIOLockedValueBox, so reads and writes are serialised.
 final class Collector: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = ByteBuffer
     let received = NIOLockedValueBox(Data())
