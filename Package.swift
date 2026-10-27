@@ -19,11 +19,22 @@ let package = Package(
             name: "SwiftHTTPService",
             targets: ["SwiftHTTPService"]
         ),
+        // The transport: HTTP/1.1 over TCP and TLS, with the limits and the lifecycle. Kept a separate
+        // product so a consumer that brings its own transport links no NIO.
+        .library(
+            name: "SwiftHTTPServiceNIO",
+            targets: ["SwiftHTTPServiceNIO"]
+        ),
     ],
     dependencies: [
-        // Apple's, and the only dependencies this package takes. The transport target adds swift-nio and
-        // swift-nio-ssl, and the core stays free of them.
+        // Apple's: the core takes swift-http-types; the transport target adds swift-nio and swift-nio-extras.
+        // The core stays free of NIO.
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.102.0"),
+        .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.0"),
+        // The owner's own, and only the transport target's: it loads and judges the server's TLS identity,
+        // reloads a renewed certificate, and classifies a bind as exposed plaintext. A sibling checkout.
+        .package(path: "../SwiftTLSKit"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
     ],
     targets: [
@@ -31,6 +42,45 @@ let package = Package(
             name: "SwiftHTTPService",
             dependencies: [
                 .product(name: "HTTPTypes", package: "swift-http-types"),
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ]
+        ),
+        .target(
+            name: "SwiftHTTPServiceNIO",
+            dependencies: [
+                "SwiftHTTPService",
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+                .product(name: "NIOExtras", package: "swift-nio-extras"),
+                .product(name: "SwiftTLSKit", package: "SwiftTLSKit"),
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ]
+        ),
+        .testTarget(
+            name: "SwiftHTTPServiceNIOTests",
+            dependencies: [
+                "SwiftHTTPServiceNIO",
+                "SwiftHTTPService",
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOEmbedded", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOTLS", package: "swift-nio"),
+                .product(name: "NIOExtras", package: "swift-nio-extras"),
+                .product(name: "SwiftTLSKit", package: "SwiftTLSKit"),
+                // Test targets only: certificates generated when the tests run, so no key is checked in.
+                .product(name: "SwiftTLSKitTestSupport", package: "SwiftTLSKit"),
+                // Only to pin down why the bridge is not used (ExtrasBridgeAssumptionTests); never linked into the library.
+                .product(name: "NIOHTTPTypesHTTP1", package: "swift-nio-extras"),
+                .product(name: "NIOHTTPTypes", package: "swift-nio-extras"),
             ],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
