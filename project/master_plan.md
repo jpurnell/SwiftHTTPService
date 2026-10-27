@@ -30,7 +30,7 @@ conditional requests, validated configuration and a bounded transport. It closes
 - **Build System:** Swift Package Manager, macOS 14. Nothing Apple-only, so Linux should build (untested).
 - **Testing:** Swift Testing
 - **Concurrency:** Swift 6 strict concurrency throughout
-- **Dependencies:** `swift-http-types` (core); the transport will add `swift-nio`, `swift-nio-ssl`.
+- **Dependencies:** `swift-http-types` (core); the transport adds `swift-nio`, `swift-nio-ssl` and `swift-nio-extras`.
 
 ### Module Structure
 
@@ -40,8 +40,9 @@ Sources/SwiftHTTPService/            the core, no NIO
 ├── Context.swift                    typed values middleware attach
 ├── Response.swift                   json, empty, notModified, problem
 ├── Problem.swift                    RFC 9457
-└── Middleware.swift                 Handler, Middleware, wrap(_:with:)
-Sources/SwiftHTTPServiceNIO/         the transport (to build)
+├── Middleware.swift                 Handler, Middleware, wrap(_:with:)
+└── ServiceConfiguration.swift       validated configuration and Limits
+Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, ConnectionHandler, PipelineBuilder, TLSIdentity
 ```
 
 ---
@@ -53,9 +54,23 @@ Sources/SwiftHTTPServiceNIO/         the transport (to build)
 - [x] `Request`: strict origin-form parsing (22 refused targets), segments split before decoding, query.
 - [x] `Context`, `Response`, `Problem`, `Handler`, `Middleware`, `wrap`. 33 tests; hand mutations caught.
 
+### Transport (branch `transport`)
+- [x] `ServiceConfiguration`, `Limits`, `TLSFiles`: validated, nothing clamped, errors never carry a value.
+- [x] `SwiftHTTPServiceNIO`: `HTTPServer` (start, reload, graceful shutdown), every limit enforced,
+  request-smuggling hygiene, fixed refusals, connection cap, real timers. 90 tests; hand mutations of every
+  limit and rule, the survivors turned into tests or the redundant code removed.
+- [x] TLS is the owner's SwiftTLSKit (path dependency on `../SwiftTLSKit`, transport target only): typed
+  identity errors, reload without a restart, `BindExposure` refusing exposed plaintext.
+- [x] Evaluated `swift-nio-extras`: adopted `ServerQuiescingHelper`; not `NIOHTTPTypesHTTP1` (it rewrites
+  absolute-form targets and consumes `Host`) and not `NIOCertificateReloading` (links a non-Apple package;
+  SwiftTLSKit does reload). Reasons are in `CHANGELOG.md` and pinned by tests.
+- [ ] A reload trigger (SIGHUP or a timer) is the executable's: `reloadTLS()` is the hook.
+- [ ] `../SwiftTLSKit` is a sibling path dependency, so this package resolves only beside a SwiftTLSKit
+  checkout; switch to its URL when SwiftTLSKit is tagged for it (it is `0.2.1`, private).
+- [ ] HTTP/2, only if a consumer needs it.
+
 ### What's Next
-- [ ] `Router` (patterns, specificity, 404/405, HEAD), the `Conditional` helper, `ServiceConfiguration`.
-- [ ] The transport target: HTTP/1.1 server, limits, timeouts, connection cap, graceful shutdown, TLS.
+- [ ] `Router` (patterns, specificity, 404/405, HEAD), the `Conditional` helper (the parent's, in the core).
 - [ ] Rate limiter, request id, access log middleware.
 - [ ] A GitHub remote (not created: outward-facing).
 

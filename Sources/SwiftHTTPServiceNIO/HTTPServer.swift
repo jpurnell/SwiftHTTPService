@@ -3,23 +3,26 @@
 //
 // The server: start it, let it serve, shut it down gracefully.
 
+import Foundation
 import NIOConcurrencyHelpers
 import NIOCore
 import NIOExtras
 import NIOPosix
-import NIOSSL
 import SwiftHTTPService
+import SwiftTLSKit
 
-/// Why a server did not start. None of these carries a path, a file's contents or a peer's bytes.
+/// Why a server did not start. None carries a file's contents or a peer's bytes.
 public enum HTTPServerError: Error, Equatable, Sendable {
     /// ``HTTPServer/start()`` was called on a server that has been started before.
     case alreadyStarted
-    /// The certificate chain file is missing, unreadable or holds no certificate.
-    case tlsCertificateUnreadable
-    /// The private key file is missing, unreadable or not a PEM key.
-    case tlsKeyUnreadable
-    /// The certificate and key were read but cannot be used together (a key that does not belong to the certificate).
-    case tlsIdentityRejected
+    /// The TLS identity is unfit to serve: a file is missing, unreadable or too open, the chain holds no
+    /// certificate, the key does not belong to the certificate, or the leaf has expired. SwiftTLSKit's typed
+    /// error says which, and names the path (never the contents). The server can be started again once the
+    /// files are fixed.
+    case tlsIdentity(ServerIdentityError)
+    /// The host is not loopback and no TLS identity is configured, so the server would serve plaintext to
+    /// the network. The server can be started again with a loopback host or with TLS.
+    case exposedPlaintext(host: String)
     /// The listening socket could not be opened: the address is in use, not available, or not permitted.
     case bindFailed
 }
@@ -60,6 +63,7 @@ public final class HTTPServer: Sendable {
         let channel: any Channel
         let registry: ConnectionRegistry
         let quiescing: ServerQuiescingHelper
+        let tls: ReloadableServerTLS?
     }
 
     private enum Lifecycle {
@@ -94,12 +98,25 @@ public final class HTTPServer: Sendable {
         }
         guard mayStart else { throw HTTPServerError.alreadyStarted }
         let configuration = context.configuration
-        let tls: NIOSSLContext?
-        do {
-            tls = try configuration.tls.map { try TLSIdentity.makeContext($0) }
-        } catch {
-            lifecycle.withLockedValue { $0 = .stopped }
-            throw error
+        let tls: ReloadableServerTLS?
+        if let files = configuration.tls {
+            do throws(ServerIdentityError) {
+                tls = try ReloadableServerTLS(
+                    identity: ServerIdentity(certificateChainPath: files.certificateChainPath, privateKeyPath: files.privateKeyPath),
+                    options: ServerTLSOptions(minimumVersion: .tls12, applicationProtocols: ["http/1.1"]),
+                    now: { Date() })
+            } catch {
+                lifecycle.withLockedValue { $0 = .new }
+                throw HTTPServerError.tlsIdentity(error)
+            }
+        } else {
+            tls = nil
+        }
+        // Plaintext is for loopback. SwiftTLSKit decides what counts as exposed, so every server of the
+        // owner's means the same by it.
+        if BindExposure.classify(host: configuration.host, tlsConfigured: tls != nil).isExposedPlaintext {
+            lifecycle.withLockedValue { $0 = .new }
+            throw HTTPServerError.exposedPlaintext(host: configuration.host)
         }
         let group = MultiThreadedEventLoopGroup(numberOfThreads: max(1, min(System.coreCount, 4)))
         let registry = ConnectionRegistry(maximum: configuration.limits.maximumConnections)
@@ -115,7 +132,7 @@ public final class HTTPServer: Sendable {
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
-                guard !context.isDraining, registry.admit(channel) else {
+                guard registry.admit(channel) else {
                     return channel.eventLoop.makeFailedFuture(ChannelError.ioOnClosedChannel)
                 }
                 channel.closeFuture.whenComplete { _ in registry.remove(channel) }
@@ -129,9 +146,26 @@ public final class HTTPServer: Sendable {
             lifecycle.withLockedValue { $0 = .stopped }
             throw HTTPServerError.bindFailed
         }
-        lifecycle.withLockedValue { $0 = .running(Running(group: group, channel: channel, registry: registry, quiescing: quiescing)) }
+        lifecycle.withLockedValue { $0 = .running(Running(group: group, channel: channel, registry: registry, quiescing: quiescing, tls: tls)) }
         let local = channel.localAddress
         return BoundAddress(host: local?.ipAddress ?? configuration.host, port: local?.port ?? Int(configuration.port))
+    }
+
+    /// Takes a renewed certificate and key from the configured files, without a restart.
+    ///
+    /// New connections are served with the new identity; connections already open are not touched. The new
+    /// files are validated completely first, and if they are unfit the old identity keeps being served and
+    /// the outcome says so. Wire this to whatever signals a renewal (a hangup, a timer, an admin call); see
+    /// SwiftTLSKit's `ReloadableServerTLS.reloadOnEach`.
+    ///
+    /// - Returns: What happened, or nil if the server is not running or serves no TLS.
+    @discardableResult
+    public func reloadTLS(_ mode: ReloadMode = .always) -> ReloadOutcome? {
+        let tls: ReloadableServerTLS? = lifecycle.withLockedValue { state in
+            guard case .running(let running) = state else { return nil }
+            return running.tls
+        }
+        return tls?.reload(mode)
     }
 
     /// Stops serving, gracefully.
@@ -158,8 +192,6 @@ public final class HTTPServer: Sendable {
     }
 
     private func performShutdown(_ running: Running) async {
-        context.beginDraining()
-        running.registry.stopAdmitting()
         // Closes the listening socket, tells every open connection to quiesce, and completes when the last
         // of them has closed. The grace period is ours: when it ends, whatever is left is closed.
         let finished = running.group.next().makePromise(of: Void.self)

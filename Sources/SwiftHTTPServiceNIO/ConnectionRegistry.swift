@@ -17,7 +17,6 @@ import NIOCore
 final class ConnectionRegistry: Sendable {
     private struct State {
         var channels: [ObjectIdentifier: any Channel] = [:]
-        var closed = false
     }
 
     private let maximum: Int
@@ -27,10 +26,10 @@ final class ConnectionRegistry: Sendable {
         self.maximum = maximum
     }
 
-    /// Records `channel` if there is room and the registry is still taking connections.
+    /// Records `channel` if there is room.
     func admit(_ channel: any Channel) -> Bool {
         state.withLockedValue { state in
-            guard !state.closed, state.channels.count < maximum else { return false }
+            guard state.channels.count < maximum else { return false }
             state.channels[ObjectIdentifier(channel)] = channel
             return true
         }
@@ -43,11 +42,6 @@ final class ConnectionRegistry: Sendable {
 
     /// How many connections are open.
     var count: Int { state.withLockedValue { $0.channels.count } }
-
-    /// Stops admitting. Connections already admitted are untouched.
-    func stopAdmitting() {
-        state.withLockedValue { $0.closed = true }
-    }
 
     /// Closes every open connection now.
     func closeAll() {

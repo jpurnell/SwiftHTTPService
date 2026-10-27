@@ -66,9 +66,12 @@ final class PipelineHarness: Sendable {
         var pending = Data()
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
+            // Whether it was open is read BEFORE draining: a response written and then closed between the
+            // drain and the check would otherwise look like a connection that closed with nothing to say.
+            let wasOpen = channel.isActive
             pending.append(try await drainOutbound())
             if let response = Self.parse(&pending) { return response }
-            if !channel.isActive, pending.isEmpty { return nil }
+            if !wasOpen, pending.isEmpty { return nil }
             try await Task.sleep(for: .milliseconds(2))
         }
         return nil

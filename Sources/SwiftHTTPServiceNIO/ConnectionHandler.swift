@@ -184,7 +184,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     /// hexadecimal, no list, and small enough to be a real length.
     static func parseLength(_ value: String) -> Int? {
         let trimmed = value.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, trimmed.utf8.count <= 18, trimmed.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
+        guard trimmed.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
             return nil
         }
         return Int(trimmed)
@@ -222,10 +222,10 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
 
     private func completed(_ result: Result<Response, any Error>, isHead: Bool, context: ChannelHandlerContext) {
         inFlight = nil
-        guard case .responding = state, context.channel.isActive else { return }
+        guard context.channel.isActive else { return }
         switch result {
         case .success(let response) where (200...599).contains(response.status.code):
-            write(response, isHead: isHead, close: closeAfterResponse || server.isDraining, context: context)
+            write(response, isHead: isHead, close: closeAfterResponse, context: context)
         case .success, .failure:
             // A thrown error, or a status that is not a final one. The text of an error is never sent.
             refuse(.internalError, context: context)
