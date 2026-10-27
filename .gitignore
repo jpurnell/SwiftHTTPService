@@ -1,0 +1,14 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+# Vendored framework — replaceable, never tracked. See development-guidelines/scripts/update.sh
+development-guidelines/
+
+# Claude Code local settings (personal preferences, not shared)
+.claude/settings.local.json
+CLAUDE.local.md

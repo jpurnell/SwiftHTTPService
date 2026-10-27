@@ -1,0 +1,37 @@
+docTarget: SwiftHTTPService
+
+# `excludedCheckers` and `enabledCheckers`, not `exclude` and `checkers`.
+#
+# The gate ignores keys it does not recognise, so the superseded names produced a file
+# that described a checker selection which never ran — the defaults ran instead, and the
+# mismatch surfaced only as an advisory note. A survey on 2026-08-25 found 11 of 73
+# repositories carrying the old names, every one of them scaffolded from here.
+#
+# Not `excludePatterns`, which is what the gate's own "did you mean" suggests: that key
+# holds file globs, so taking the suggestion turns a checker name into a pattern that
+# matches nothing and excludes nothing.
+excludedCheckers:
+  - disk-clean
+
+enabledCheckers:
+  - all
+  - logging
+
+# Without this the status auditor looks for a master plan inside the framework's own
+# directory, finds none, and skips. A checker that skips is not a checker that passed.
+status:
+  guidelinesPath: "."
+  masterPlanPath: project/master_plan.md
+
+consistency:
+  corpusPath: ../org-judgement-corpus
+  projectID: SwiftHTTPService
+  consistencyThreshold: 0.7
+  defaultRiskTier: 2
+
+ijs:
+  projectID: "SwiftHTTPService"
+  corpusPath: "../org-judgement-corpus"
+  defaultRiskTier: 2
+  decisionOwner: "jpurnell"
+  remoteURL: "git@github.com:jpurnell/org-judgement-corpus.git"

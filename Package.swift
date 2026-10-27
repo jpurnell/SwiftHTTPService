@@ -1,0 +1,47 @@
+// swift-tools-version: 6.2
+// legibility:description: A small, safe kit for serving a JSON API over HTTP/1.1 — routing, middleware, problem details, conditional requests, validated configuration, and a bounded transport.
+//
+// 6.2 rather than the toolchain that happens to be installed: consumers build in CI and deploy to hosts
+// that may be a release behind, and a manifest newer than the compiler fails at resolution.
+
+import PackageDescription
+
+let package = Package(
+    name: "SwiftHTTPService",
+    // Nothing here is Apple-only, so Linux should build; it is not tested there yet (design D2).
+    platforms: [
+        .macOS(.v14),
+        .iOS(.v17),
+    ],
+    products: [
+        // The core: no sockets, no NIO. Routing and middleware are pure and tested without a network.
+        .library(
+            name: "SwiftHTTPService",
+            targets: ["SwiftHTTPService"]
+        ),
+    ],
+    dependencies: [
+        // Apple's, and the only dependencies this package takes. The transport target adds swift-nio and
+        // swift-nio-ssl, and the core stays free of them.
+        .package(url: "https://github.com/apple/swift-http-types.git", from: "1.3.0"),
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
+    ],
+    targets: [
+        .target(
+            name: "SwiftHTTPService",
+            dependencies: [
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ]
+        ),
+        .testTarget(
+            name: "SwiftHTTPServiceTests",
+            dependencies: ["SwiftHTTPService"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ]
+        ),
+    ]
+)
