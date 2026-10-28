@@ -32,6 +32,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.3.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.102.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.0"),
+        // The transport's HTTP/2: frames, streams and flow control. Transport target only.
+        .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.46.0"),
         // The owner's own, and only the transport target's: it loads and judges the server's TLS identity,
         // reloads a renewed certificate, and classifies a bind as exposed plaintext. Pre-1.0, a minor is a source break.
         .package(url: "git@github.com:jpurnell/SwiftTLSKit.git", .upToNextMinor(from: "0.2.1")),
@@ -57,6 +59,9 @@ let package = Package(
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
                 .product(name: "NIOExtras", package: "swift-nio-extras"),
+                .product(name: "NIOTLS", package: "swift-nio"),
+                .product(name: "NIOHTTP2", package: "swift-nio-http2"),
+                .product(name: "NIOHPACK", package: "swift-nio-http2"),
                 .product(name: "SwiftTLSKit", package: "SwiftTLSKit"),
             ],
             swiftSettings: [
@@ -74,6 +79,8 @@ let package = Package(
                 .product(name: "NIOEmbedded", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOTLS", package: "swift-nio"),
+                .product(name: "NIOHTTP2", package: "swift-nio-http2"),
+                .product(name: "NIOHPACK", package: "swift-nio-http2"),
                 .product(name: "NIOExtras", package: "swift-nio-extras"),
                 .product(name: "SwiftTLSKit", package: "SwiftTLSKit"),
                 // Test targets only: certificates generated when the tests run, so no key is checked in.

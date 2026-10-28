@@ -106,7 +106,7 @@ public final class HTTPServer: Sendable {
             do throws(ServerIdentityError) {
                 tls = try ReloadableServerTLS(
                     identity: ServerIdentity(certificateChainPath: files.certificateChainPath, privateKeyPath: files.privateKeyPath),
-                    options: ServerTLSOptions(minimumVersion: .tls12, applicationProtocols: ["http/1.1"]),
+                    options: ServerTLSOptions(minimumVersion: .tls12, applicationProtocols: ProtocolNegotiation.offer(for: configuration.protocols)),
                     now: { Date() })
             } catch {
                 lifecycle.withLockedValue { $0 = .new }

@@ -160,9 +160,11 @@ struct Running: Sendable {
 }
 
 func startServer(
-    limits: Limits = Limits(), tls: TLSFiles? = nil, handler: @escaping Handler = ok()
+    limits: Limits = Limits(), tls: TLSFiles? = nil, protocols: ServiceConfiguration.Protocols = .http1AndHTTP2,
+    handler: @escaping Handler = ok()
 ) async throws -> Running {
-    let server = HTTPServer(configuration: try ServiceConfiguration(port: 0, tls: tls, limits: limits), handler: handler)
+    let server = HTTPServer(
+        configuration: try ServiceConfiguration(port: 0, tls: tls, limits: limits, protocols: protocols), handler: handler)
     let address = try await server.start()
     return Running(server: server, address: address)
 }

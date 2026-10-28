@@ -1,0 +1,128 @@
+import Foundation
+import NIOConcurrencyHelpers
+import NIOCore
+import NIOHPACK
+import NIOHTTP2
+import NIOPosix
+import NIOTLS
+import SwiftTLSKit
+@testable import SwiftHTTPServiceNIO
+
+/// What came back on one stream.
+struct H2Response: Sendable {
+    var status: Int?
+    var headers: [(name: String, value: String)] = []
+    var body = Data()
+    var ended = false
+    var resetCode: Int?
+
+    func header(_ name: String) -> String? { headers.first { $0.name == name }?.value }
+    var text: String { String(decoding: body, as: UTF8.self) }
+}
+
+/// Collects the frames of one stream.
+// Justification: all state is in a NIOLockedValueBox, so the event loop writes and the test reads are serialised.
+final class StreamCollector: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = HTTP2Frame.FramePayload
+    let state = NIOLockedValueBox(H2Response())
+
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        let payload = unwrapInboundIn(data)
+        state.withLockedValue { response in
+            switch payload {
+            case .headers(let block):
+                for (name, value, _) in block.headers {
+                    if name == ":status" { response.status = Int(value) } else { response.headers.append((name, value)) }
+                }
+                if block.endStream { response.ended = true }
+            case .data(let frame):
+                if case .byteBuffer(let buffer) = frame.data { response.body.append(contentsOf: buffer.readableBytesView) }
+                if frame.endStream { response.ended = true }
+            case .rstStream(let code):
+                response.resetCode = code.networkCode
+            default:
+                break
+            }
+        }
+    }
+}
+
+/// Remembers the protocol TLS negotiated and passes everything on.
+// Justification: the negotiated protocol is held in a NIOLockedValueBox.
+final class NegotiationRecorder: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = NIOAny
+    let negotiated = NIOLockedValueBox<String?>(nil)
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if case TLSUserEvent.handshakeCompleted(let protocolName) = event {
+            negotiated.withLockedValue { $0 = protocolName }
+        }
+        context.fireUserInboundEventTriggered(event)
+    }
+}
+
+/// An HTTP/2 client for tests, over TLS, speaking frames.
+struct H2Client: Sendable {
+    let channel: any Channel
+    let multiplexer: NIOHTTP2Handler.StreamMultiplexer
+    let recorder: NegotiationRecorder
+
+    var negotiatedProtocol: String? { recorder.negotiated.withLockedValue { $0 } }
+
+    static func connect(to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext) async throws -> H2Client {
+        let recorder = NegotiationRecorder()
+        let box = NIOLockedValueBox<NIOHTTP2Handler.StreamMultiplexer?>(nil)
+        let channel = try await ClientBootstrap(group: group)
+            .channelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    let operations = channel.pipeline.syncOperations
+                    try tls.addHandlers(to: operations, serverHostname: "localhost")
+                    try operations.addHandler(recorder)
+                    let multiplexer = try operations.configureHTTP2Pipeline(
+                        mode: .client, connectionConfiguration: .init(), streamConfiguration: .init(),
+                        inboundStreamInitializer: { $0.eventLoop.makeSucceededVoidFuture() })
+                    box.withLockedValue { $0 = multiplexer }
+                }
+            }
+            .connect(host: address.host, port: address.port)
+            .get()
+        guard let multiplexer = box.withLockedValue({ $0 }) else { throw ChannelError.ioOnClosedChannel }
+        return H2Client(channel: channel, multiplexer: multiplexer, recorder: recorder)
+    }
+
+    /// Sends one request on a new stream and waits for the response to end, a reset, or the timeout.
+    func request(
+        _ method: String, _ path: String, authority: String = "localhost", headers: [(String, String)] = [],
+        body: Data? = nil, timeout: Duration = .seconds(5)
+    ) async throws -> H2Response {
+        let collector = StreamCollector()
+        let promise = channel.eventLoop.makePromise(of: Channel.self)
+        multiplexer.createStreamChannel(promise: promise) { stream in
+            stream.pipeline.addHandler(collector)
+        }
+        let stream = try await promise.futureResult.get()
+        var block = HPACKHeaders()
+        block.add(name: ":method", value: method)
+        block.add(name: ":scheme", value: "https")
+        block.add(name: ":path", value: path)
+        block.add(name: ":authority", value: authority)
+        for (name, value) in headers { block.add(name: name, value: value) }
+        let hasBody = body != nil
+        try await stream.writeAndFlush(HTTP2Frame.FramePayload.headers(.init(headers: block, endStream: !hasBody))).get()
+        if let body {
+            try await stream.writeAndFlush(HTTP2Frame.FramePayload.data(.init(data: .byteBuffer(ByteBuffer(bytes: body)), endStream: true))).get()
+        }
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            let current = collector.state.withLockedValue { $0 }
+            if current.ended || current.resetCode != nil { return current }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        return collector.state.withLockedValue { $0 }
+    }
+
+    func close() async {
+        await withCheckedContinuation { continuation in
+            channel.close().whenComplete { _ in continuation.resume() }
+        }
+    }
+}
