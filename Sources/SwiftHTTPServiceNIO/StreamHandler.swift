@@ -85,6 +85,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         var authority: String?
         var fields = HTTPFields()
         var lengths: [String] = []
+        var expectations: [String] = []
         for (name, value, _) in block.headers {
             switch name {
             case ":method": method = value
@@ -97,6 +98,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
                     return
                 }
                 if name == "content-length" { lengths.append(value) }
+                if name == "expect" { expectations.append(value) }
                 fields.append(HTTPField(name: fieldName, value: value))
             }
         }
@@ -114,6 +116,14 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
                 }
             } else {
                 fields.append(HTTPField(name: hostName, value: authority))
+            }
+        }
+        // `Expect: 100-continue` needs no interim response here: the server reads the body as it arrives, and
+        // a client may send it without waiting. Any other expectation cannot be met (RFC 9110 section 10.1.1).
+        if !expectations.isEmpty {
+            guard expectations.count == 1, expectations[0].trimmingCharacters(in: .whitespaces).lowercased() == "100-continue" else {
+                refuse(.expectationFailed, requestEnded: block.endStream, context: context)
+                return
             }
         }
         var declaredLength: Int?
@@ -199,14 +209,23 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         if prepared.hasBody { block.add(name: "content-length", value: String(prepared.body.count)) }
 
         let sendsBody = prepared.hasBody && !isHead && !prepared.body.isEmpty
-        context.write(wrapOutboundOut(.headers(.init(headers: block, endStream: !sendsBody))), promise: nil)
-        if sendsBody {
-            context.write(wrapOutboundOut(.data(.init(data: .byteBuffer(ByteBuffer(bytes: prepared.body)), endStream: true))), promise: nil)
-        }
+        // The last frame of the response carries the promise. If the peer is still sending a body nobody
+        // wants, the stream is reset with NO_ERROR once that frame has been written (RFC 9113 section 8.1);
+        // a reset queued behind the response would drop the response's own data.
+        let last = context.eventLoop.makePromise(of: Void.self)
         if !requestEnded {
-            context.write(wrapOutboundOut(.rstStream(.noError)), promise: nil)
+            let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
+            last.futureResult.whenSuccess {
+                loopContext.value.writeAndFlush(NIOAny(HTTP2Frame.FramePayload.rstStream(.noError)), promise: nil)
+            }
         }
-        context.flush()
+        if sendsBody {
+            context.write(wrapOutboundOut(.headers(.init(headers: block, endStream: false))), promise: nil)
+            context.writeAndFlush(
+                wrapOutboundOut(.data(.init(data: .byteBuffer(ByteBuffer(bytes: prepared.body)), endStream: true))), promise: last)
+        } else {
+            context.writeAndFlush(wrapOutboundOut(.headers(.init(headers: block, endStream: true))), promise: last)
+        }
     }
 
     private func reset(_ code: NIOHTTP2.HTTP2ErrorCode, context: ChannelHandlerContext) {

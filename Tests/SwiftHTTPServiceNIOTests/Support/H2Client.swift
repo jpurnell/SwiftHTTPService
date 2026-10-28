@@ -15,6 +15,10 @@ struct H2Response: Sendable {
     var body = Data()
     var ended = false
     var resetCode: Int?
+    /// The stream's channel went inactive without an end or a reset: the connection was closed under it.
+    var closed = false
+    /// Trailers the server sent after the body, if any.
+    var trailers: [(name: String, value: String)] = []
 
     func header(_ name: String) -> String? { headers.first { $0.name == name }?.value }
     var text: String { String(decoding: body, as: UTF8.self) }
@@ -30,6 +34,9 @@ final class StreamCollector: ChannelInboundHandler, @unchecked Sendable {
         let payload = unwrapInboundIn(data)
         state.withLockedValue { response in
             switch payload {
+            case .headers(let block) where response.status != nil:
+                for (name, value, _) in block.headers { response.trailers.append((name, value)) }
+                if block.endStream { response.ended = true }
             case .headers(let block):
                 for (name, value, _) in block.headers {
                     if name == ":status" { response.status = Int(value) } else { response.headers.append((name, value)) }
@@ -44,6 +51,13 @@ final class StreamCollector: ChannelInboundHandler, @unchecked Sendable {
                 break
             }
         }
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        state.withLockedValue { response in
+            if !response.ended && response.resetCode == nil { response.closed = true }
+        }
+        context.fireChannelInactive()
     }
 }
 
@@ -68,7 +82,11 @@ struct H2Client: Sendable {
 
     var negotiatedProtocol: String? { recorder.negotiated.withLockedValue { $0 } }
 
-    static func connect(to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext) async throws -> H2Client {
+    /// - Parameter lenient: Turns off this client's own HTTP/2 validation, so it can send what a conforming
+    ///   client never would: that is how the server's refusals are tested.
+    static func connect(
+        to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext, lenient: Bool = false
+    ) async throws -> H2Client {
         let recorder = NegotiationRecorder()
         let box = NIOLockedValueBox<NIOHTTP2Handler.StreamMultiplexer?>(nil)
         let channel = try await ClientBootstrap(group: group)
@@ -77,8 +95,13 @@ struct H2Client: Sendable {
                     let operations = channel.pipeline.syncOperations
                     try tls.addHandlers(to: operations, serverHostname: "localhost")
                     try operations.addHandler(recorder)
+                    var configuration = NIOHTTP2Handler.ConnectionConfiguration()
+                    if lenient {
+                        configuration.headerBlockValidation = .disabled
+                        configuration.contentLengthValidation = .disabled
+                    }
                     let multiplexer = try operations.configureHTTP2Pipeline(
-                        mode: .client, connectionConfiguration: .init(), streamConfiguration: .init(),
+                        mode: .client, connectionConfiguration: configuration, streamConfiguration: .init(),
                         inboundStreamInitializer: { $0.eventLoop.makeSucceededVoidFuture() })
                     box.withLockedValue { $0 = multiplexer }
                 }
@@ -114,7 +137,40 @@ struct H2Client: Sendable {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             let current = collector.state.withLockedValue { $0 }
-            if current.ended || current.resetCode != nil { return current }
+            if current.ended || current.resetCode != nil || current.closed { return current }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        return collector.state.withLockedValue { $0 }
+    }
+
+    /// Sends exactly this header block, in this order, then the body and the trailers if given.
+    func send(
+        block fields: [(String, String)], body: Data? = nil, trailers: [(String, String)]? = nil,
+        leaveOpen: Bool = false, timeout: Duration = .seconds(5)
+    ) async throws -> H2Response {
+        let collector = StreamCollector()
+        let promise = channel.eventLoop.makePromise(of: Channel.self)
+        multiplexer.createStreamChannel(promise: promise) { stream in
+            stream.pipeline.addHandler(collector)
+        }
+        let stream = try await promise.futureResult.get()
+        var block = HPACKHeaders()
+        for (name, value) in fields { block.add(name: name, value: value) }
+        let endsWithHeaders = body == nil && trailers == nil && !leaveOpen
+        try await stream.writeAndFlush(HTTP2Frame.FramePayload.headers(.init(headers: block, endStream: endsWithHeaders))).get()
+        if let body {
+            try await stream.writeAndFlush(
+                HTTP2Frame.FramePayload.data(.init(data: .byteBuffer(ByteBuffer(bytes: body)), endStream: trailers == nil))).get()
+        }
+        if let trailers {
+            var trailerBlock = HPACKHeaders()
+            for (name, value) in trailers { trailerBlock.add(name: name, value: value) }
+            try await stream.writeAndFlush(HTTP2Frame.FramePayload.headers(.init(headers: trailerBlock, endStream: true))).get()
+        }
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            let current = collector.state.withLockedValue { $0 }
+            if current.ended || current.resetCode != nil || current.closed { return current }
             try await Task.sleep(for: .milliseconds(5))
         }
         return collector.state.withLockedValue { $0 }
