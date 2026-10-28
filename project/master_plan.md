@@ -62,28 +62,29 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
 - [x] `SwiftHTTPServiceNIO`: `HTTPServer` (start, reload, graceful shutdown), every limit enforced,
   request-smuggling hygiene, fixed refusals, connection cap, real timers. 91 tests; hand mutations of every
   limit and rule, the survivors turned into tests or the redundant code removed.
-- [x] TLS is the owner's SwiftTLSKit (path dependency on `../SwiftTLSKit`, transport target only): typed
+- [x] TLS is the owner's SwiftTLSKit (URL dependency, `.upToNextMinor(from: "0.2.1")`, transport target only): typed
   identity errors, reload without a restart, `BindExposure` refusing exposed plaintext.
 - [x] Evaluated `swift-nio-extras`: adopted `ServerQuiescingHelper`; not `NIOHTTPTypesHTTP1` (it rewrites
   absolute-form targets and consumes `Host`) and not `NIOCertificateReloading` (links a non-Apple package;
   SwiftTLSKit does reload). Reasons are in `CHANGELOG.md` and pinned by tests.
 - [ ] A reload trigger (SIGHUP or a timer) is the executable's: `reloadTLS()` is the hook.
-- [ ] `../SwiftTLSKit` is a sibling path dependency, so this package resolves only beside a SwiftTLSKit
-  checkout; switch to its URL when SwiftTLSKit is tagged for it (it is `0.2.1`, private).
+- [x] ~~`../SwiftTLSKit` is a sibling path dependency~~ now a URL dependency, pinned to `0.2.1` (no new SwiftTLSKit tag was needed).
 - [ ] HTTP/2, only if a consumer needs it.
 
 ### What's Next
 - [x] `Router`, `Conditional`, `Router.addHealth()`: 66 tests, mutations caught.
 - [x] `ServiceConfiguration` and the transport: HTTP/1.1, limits, timeouts, connection cap, graceful shutdown, TLS through SwiftTLSKit.
 - [ ] Rate limiter, request id, access log middleware.
-- [ ] Migrate the other hand-rolled servers, after this kit has served real traffic: `project/plans/proposals/MigrationPlan_HandRolledServers.md`.
+- [ ] **Order (owner, 2026-10-28):** v0.1.0 is a milestone, not the finish. Get the kit feature complete first (the
+  middleware above, the reload trigger, the shutdown warning below, and HTTP/2 if a consumer needs it), then migrate
+  the services that can use it.
+- [ ] Migrate the other hand-rolled servers, after the kit is feature complete and has served real traffic: `project/plans/proposals/MigrationPlan_HandRolledServers.md`.
   **Real traffic began 2026-10-28:** `ijs-dashboard-server`, deployed on Teletran 2 (port 9140), runs on this kit. The
   plan's decisions are all still open: D1 (how long it must run cleanly before anything migrates, so the clock
   has started but its length is not set), D2 (streaming responses), D3 (tail wildcards) and D4 (whether FleetWatch
   migrates at all).
-- [ ] **A release.** This package is untagged, and `ijs-dashboard-server` names it by path (`../SwiftHTTPService`),
-  so the deployed server cannot be built from versions alone and cannot itself be tagged. Tagging 0.1.0 also needs
-  the SwiftTLSKit path dependency above to become a URL.
+- [x] ~~**A release.**~~ `v0.1.0` tagged 2026-10-28. `ijs-dashboard-server` still names the package by path (`../SwiftHTTPService`); moving it to the tag is its own change.
+- [ ] The test run prints "Cannot schedule tasks on an EventLoop that has already shut down"; NIO says it will become a forced crash. Find the test or code path that schedules after shutdown.
 - [x] A GitHub remote: `jpurnell/SwiftHTTPService` (private).
 
 ---
@@ -137,7 +138,7 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 
 ---
 
-**Last Updated:** 2026-10-28 (reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-10-28 (v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)

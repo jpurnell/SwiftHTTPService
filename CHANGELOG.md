@@ -6,6 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-28
+
+First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
+
 ### Added
 - `Request` with strict target parsing, `QueryItem`, `RequestError`, and `Context` with typed keys.
 - `Response` (`json`, `empty`, `notModified`, `problem`, `setting`, `retrying`) and `Problem` (RFC 9457).
@@ -70,6 +74,9 @@ All notable changes to this project are recorded here. The format follows
 - **Removed after SwiftTLSKit:** my own `TLSIdentity` (PEM loading, BoringSSL context building, the
   unreadable/rejected errors, minimum version and ALPN), the committed test certificate and key, and the
   direct `swift-nio-ssl` dependency (it still arrives through SwiftTLSKit).
+- **SwiftTLSKit is a URL dependency**, `.upToNextMinor(from: "0.2.1")`, in place of the sibling path
+  `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/commits/main
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jpurnell/SwiftHTTPService/releases/tag/v0.1.0

@@ -33,8 +33,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.102.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.0"),
         // The owner's own, and only the transport target's: it loads and judges the server's TLS identity,
-        // reloads a renewed certificate, and classifies a bind as exposed plaintext. A sibling checkout.
-        .package(path: "../SwiftTLSKit"),
+        // reloads a renewed certificate, and classifies a bind as exposed plaintext. Pre-1.0, a minor is a source break.
+        .package(url: "git@github.com:jpurnell/SwiftTLSKit.git", .upToNextMinor(from: "0.2.1")),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
     ],
     targets: [

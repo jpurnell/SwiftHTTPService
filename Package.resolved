@@ -1,5 +1,5 @@
 {
-  "originHash" : "c7b7686cecf588e9d25aec76064f58ac4a3d893e2fda612acff5baf8eafd49e6",
+  "originHash" : "e6f911110947d86df6be5300a8e39a3d2a250c1ca75990fcd6ef437dbec48229",
   "pins" : [
     {
       "identity" : "swift-algorithms",
@@ -170,6 +170,15 @@
       "state" : {
         "revision" : "869129b7bf4ecc57b97d0193ad29690ca2134750",
         "version" : "1.8.1"
+      }
+    },
+    {
+      "identity" : "swifttlskit",
+      "kind" : "remoteSourceControl",
+      "location" : "git@github.com:jpurnell/SwiftTLSKit.git",
+      "state" : {
+        "revision" : "0a836ef7a826aa8eaac225098eb4fcd08ed50738",
+        "version" : "0.2.1"
       }
     }
   ],
