@@ -65,7 +65,8 @@ public final class HTTPServer: Sendable {
         let group: MultiThreadedEventLoopGroup
         let channel: any Channel
         let registry: ConnectionRegistry
-        let quiescing: ServerQuiescingHelper
+        /// Taken out of the box by the shutdown, which must let go of it before the loops stop.
+        let quiescing: NIOLockedValueBox<ServerQuiescingHelper?>
         let tls: ReloadableServerTLS?
     }
 
@@ -123,12 +124,14 @@ public final class HTTPServer: Sendable {
         }
         let group = MultiThreadedEventLoopGroup(numberOfThreads: max(1, min(System.coreCount, 4)))
         let registry = ConnectionRegistry(maximum: configuration.limits.maximumConnections)
-        let quiescing = ServerQuiescingHelper(group: group)
+        // In a box so that whoever stops the server can let go of it before the loops stop (see performShutdown).
+        let quiescing = NIOLockedValueBox<ServerQuiescingHelper?>(ServerQuiescingHelper(group: group))
         let context = self.context
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandler(quiescing.makeServerChannelHandler(channel: channel))
+                    guard let helper = quiescing.withLockedValue({ $0 }) else { throw ChannelError.ioOnClosedChannel }
+                    try channel.pipeline.syncOperations.addHandler(helper.makeServerChannelHandler(channel: channel))
                 }
             }
             .serverChannelOption(.backlog, value: 256)
@@ -145,6 +148,7 @@ public final class HTTPServer: Sendable {
         do {
             channel = try await bootstrap.bind(host: configuration.host, port: Int(configuration.port)).get()
         } catch {
+            quiescing.withLockedValue { $0 = nil }      // before the loops stop, as in performShutdown
             await Self.shutDown(group)
             lifecycle.withLockedValue { $0 = .stopped }
             throw HTTPServerError.bindFailed
@@ -198,13 +202,21 @@ public final class HTTPServer: Sendable {
         // Closes the listening socket, tells every open connection to quiesce, and completes when the last
         // of them has closed. The grace period is ours: when it ends, whatever is left is closed.
         let finished = running.group.next().makePromise(of: Void.self)
-        running.quiescing.initiateShutdown(promise: finished)
+        var helper = running.quiescing.withLockedValue { box -> ServerQuiescingHelper? in
+            defer { box = nil }
+            return box
+        }
+        helper?.initiateShutdown(promise: finished)
         let grace = context.configuration.limits.shutdownGrace.timeAmount
         let deadline = running.group.next().scheduleTask(in: grace) { running.registry.closeAll() }
         await withCheckedContinuation { continuation in
             finished.futureResult.whenComplete { _ in continuation.resume() }
         }
         deadline.cancel()
+        // The helper's `deinit` completes a promise on one of the group's loops, so it has to be gone before
+        // the loops are. It would otherwise be released when this task ends, after they had stopped, and NIO
+        // reports that (and says it will one day crash).
+        helper = nil
         await Self.shutDown(running.group)
         lifecycle.withLockedValue { $0 = .stopped }
     }
