@@ -40,6 +40,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     private let server: ServerContext
     private var state: State = .idle
     private var inFlight: Task<Response, any Error>?
+    private var bodyTimer: Scheduled<Void>?
 
     init(server: ServerContext) {
         self.server = server
@@ -68,6 +69,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
             }
             receiving.body.writeBuffer(&chunk)
             if frame.endStream {
+                cancelBodyTimer()
                 dispatch(receiving, context: context)
             } else {
                 state = .receiving(receiving)
@@ -86,6 +88,19 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         var fields = HTTPFields()
         var lengths: [String] = []
         var expectations: [String] = []
+        // The list is measured as RFC 9113 section 6.5.2 does: name and value octets plus 32 for each field.
+        // The library advertises the bound and does not enforce it, so it is enforced here.
+        let limits = server.configuration.limits
+        var listSize = 0
+        var regularCount = 0
+        for (name, value, _) in block.headers {
+            listSize += name.utf8.count + value.utf8.count + 32
+            if !name.hasPrefix(":") { regularCount += 1 }
+        }
+        guard listSize <= limits.maximumHeaderBytes, regularCount <= limits.maximumHeaderCount else {
+            refuse(.headersTooLarge, requestEnded: block.endStream, context: context)
+            return
+        }
         for (name, value, _) in block.headers {
             switch name {
             case ":method": method = value
@@ -149,7 +164,25 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
             dispatch(receiving, context: context)
         } else {
             state = .receiving(receiving)
+            armBodyTimer(context: context)
         }
+    }
+
+    // MARK: Timers
+
+    private func armBodyTimer(context: ChannelHandlerContext) {
+        let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
+        let loopSelf = NIOLoopBound(self, eventLoop: context.eventLoop)
+        bodyTimer = context.eventLoop.scheduleTask(in: server.configuration.limits.bodyReadTimeout.timeAmount) {
+            let handler = loopSelf.value
+            handler.bodyTimer = nil
+            if case .receiving = handler.state { handler.refuse(.requestTimeout, requestEnded: false, context: loopContext.value) }
+        }
+    }
+
+    private func cancelBodyTimer() {
+        bodyTimer?.cancel()
+        bodyTimer = nil
     }
 
     // MARK: Running the handler
@@ -199,6 +232,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     }
 
     private func write(_ response: Response, isHead: Bool, requestEnded: Bool, context: ChannelHandlerContext) {
+        cancelBodyTimer()
         state = .done
         let prepared = ResponseRules.prepare(response)
         var block = HPACKHeaders()
@@ -242,6 +276,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     }
 
     func channelInactive(context: ChannelHandlerContext) {
+        cancelBodyTimer()
         inFlight?.cancel()
         inFlight = nil
         state = .done

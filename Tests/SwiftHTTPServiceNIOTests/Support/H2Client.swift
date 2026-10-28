@@ -157,15 +157,28 @@ struct H2Client: Sendable {
         var block = HPACKHeaders()
         for (name, value) in fields { block.add(name: name, value: value) }
         let endsWithHeaders = body == nil && trailers == nil && !leaveOpen
-        try await stream.writeAndFlush(HTTP2Frame.FramePayload.headers(.init(headers: block, endStream: endsWithHeaders))).get()
-        if let body {
-            try await stream.writeAndFlush(
-                HTTP2Frame.FramePayload.data(.init(data: .byteBuffer(ByteBuffer(bytes: body)), endStream: trailers == nil))).get()
+        // The server may answer, or reset the stream, before everything has been sent. A write that then
+        // finds the stream closed is not a failure of the test: the answer is whatever the collector holds.
+        var writeFailure: (any Error)?
+        do {
+            try await stream.writeAndFlush(HTTP2Frame.FramePayload.headers(.init(headers: block, endStream: endsWithHeaders))).get()
+            if let body {
+                try await stream.writeAndFlush(
+                    HTTP2Frame.FramePayload.data(.init(data: .byteBuffer(ByteBuffer(bytes: body)), endStream: trailers == nil))).get()
+            }
+            if let trailers {
+                var trailerBlock = HPACKHeaders()
+                for (name, value) in trailers { trailerBlock.add(name: name, value: value) }
+                try await stream.writeAndFlush(HTTP2Frame.FramePayload.headers(.init(headers: trailerBlock, endStream: true))).get()
+            }
+        } catch {
+            writeFailure = error
         }
-        if let trailers {
-            var trailerBlock = HPACKHeaders()
-            for (name, value) in trailers { trailerBlock.add(name: name, value: value) }
-            try await stream.writeAndFlush(HTTP2Frame.FramePayload.headers(.init(headers: trailerBlock, endStream: true))).get()
+        if let writeFailure {
+            try await Task.sleep(for: .milliseconds(50))   // let a reset or an answer that caused it arrive
+            let current = collector.state.withLockedValue { $0 }
+            guard current.ended || current.resetCode != nil || current.closed else { throw writeFailure }
+            return current
         }
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
@@ -174,6 +187,16 @@ struct H2Client: Sendable {
             try await Task.sleep(for: .milliseconds(5))
         }
         return collector.state.withLockedValue { $0 }
+    }
+
+    /// Waits for the connection to be closed by the server.
+    func waitUntilClosed(timeout: Duration = .seconds(5)) async throws -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if !channel.isActive { return true }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        return !channel.isActive
     }
 
     func close() async {

@@ -175,6 +175,8 @@ struct HTTP2Tests {
 
     // MARK: The handshake
 
+    // That a finished handshake cancels the deadline is HTTP2LimitsTests.busyConnectionIsKept: a stream held
+    // open for three idle timeouts survives, which it would not if the deadline were still armed.
     @Test("A connection to a TLS server that never starts a handshake is closed at the idle timeout")
     func stalledHandshakeIsClosed() async throws {
         let material = try TestTLS()
@@ -186,25 +188,6 @@ struct HTTP2Tests {
             let client = try await RawClient.connect(to: running.address, group: group)   // TCP, and no ClientHello
             #expect(try await client.waitUntilClosed(timeout: .seconds(3)))
             #expect(client.received.isEmpty)
-        }
-        await running.server.shutdown()
-    }
-
-    @Test("A connection whose handshake completes is not closed by the handshake deadline")
-    func finishedHandshakeIsKept() async throws {
-        let material = try TestTLS()
-        defer { material.cleanUp() }
-        var limits = Limits()
-        limits.idleTimeout = .milliseconds(300)
-        let running = try await startServer(limits: limits, tls: material.files)
-        try await withGroup { group in
-            let client = try await H2Client.connect(
-                to: running.address, group: group, tls: try material.clientContext(applicationProtocols: ["h2"]))
-            _ = try await client.request("GET", "/first")
-            try await Task.sleep(for: .milliseconds(600))                 // past the deadline the handshake would have had
-            let response = try await client.request("GET", "/second")
-            #expect(response.status == 200)
-            await client.close()
         }
         await running.server.shutdown()
     }
