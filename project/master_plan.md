@@ -139,7 +139,7 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 
 ---
 
-**Last Updated:** 2026-10-28 (HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-10-28 (v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)

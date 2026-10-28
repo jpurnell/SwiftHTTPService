@@ -6,6 +6,11 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-28
+
+HTTP/2 over TLS. Nothing a caller of 0.1.0 writes changes: `ServiceConfiguration` and `Limits` gain defaulted
+parameters, and HTTP/2 is on by default over TLS (`protocols: .http1` turns it off).
+
 ### Added: HTTP/2 (`SwiftHTTPServiceNIO`)
 Design: `project/plans/proposals/DesignProposal_HTTP2.md`, which reverses D1 of the first design ("not now") at the
 owner's request, 2026-10-28.
@@ -117,5 +122,6 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jpurnell/SwiftHTTPService/releases/tag/v0.1.0
