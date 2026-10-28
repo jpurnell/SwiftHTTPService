@@ -71,3 +71,5 @@ All notable changes to this project are recorded here. The format follows
   unreadable/rejected errors, minimum version and ALPN), the committed test certificate and key, and the
   direct `swift-nio-ssl` dependency (it still arrives through SwiftTLSKit).
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
+
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/commits/main

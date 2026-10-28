@@ -57,7 +57,7 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
 - [x] `Request`: strict origin-form parsing (22 refused targets), segments split before decoding, query.
 - [x] `Context`, `Response`, `Problem`, `Handler`, `Middleware`, `wrap`. 33 tests; hand mutations caught.
 
-### Transport (branch `transport`)
+### Transport (~~branch `transport`~~ merged into `main`, `20ab1b8`, 2026-10-27)
 - [x] `ServiceConfiguration`, `Limits`, `TLSFiles`: validated, nothing clamped, errors never carry a value.
 - [x] `SwiftHTTPServiceNIO`: `HTTPServer` (start, reload, graceful shutdown), every limit enforced,
   request-smuggling hygiene, fixed refusals, connection cap, real timers. 91 tests; hand mutations of every
@@ -77,6 +77,13 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
 - [x] `ServiceConfiguration` and the transport: HTTP/1.1, limits, timeouts, connection cap, graceful shutdown, TLS through SwiftTLSKit.
 - [ ] Rate limiter, request id, access log middleware.
 - [ ] Migrate the other hand-rolled servers, after this kit has served real traffic: `project/plans/proposals/MigrationPlan_HandRolledServers.md`.
+  **Real traffic began 2026-10-28:** `ijs-dashboard-server`, deployed on Teletran 2 (port 9140), runs on this kit. The
+  plan's decisions are all still open: D1 (how long it must run cleanly before anything migrates, so the clock
+  has started but its length is not set), D2 (streaming responses), D3 (tail wildcards) and D4 (whether FleetWatch
+  migrates at all).
+- [ ] **A release.** This package is untagged, and `ijs-dashboard-server` names it by path (`../SwiftHTTPService`),
+  so the deployed server cannot be built from versions alone and cannot itself be tagged. Tagging 0.1.0 also needs
+  the SwiftTLSKit path dependency above to become a URL.
 - [x] A GitHub remote: `jpurnell/SwiftHTTPService` (private).
 
 ---
@@ -116,14 +123,21 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 ### Phase 1: The core
 - [x] Request, Context, Response, Problem, Middleware
 - [x] Router, Conditional, health route
-- [ ] ServiceConfiguration
+- [x] ServiceConfiguration (the box had been left open after it shipped)
 
 ### Phase 2: The transport
-- [ ] HTTP/1.1, limits, graceful shutdown, then TLS
+- [x] HTTP/1.1, limits, graceful shutdown, then TLS (merged 2026-10-27; in service under `ijs-dashboard-server`
+  from 2026-10-28)
+
+### Phase 3: Release
+- [ ] 0.1.0: SwiftTLSKit by URL, then the tag, then `ijs-dashboard-server` names it by version
 
 ### Future
 - HTTP/2, only if a consumer needs it.
 
 ---
 
-**Last Updated:** 2026-10-27 (router, conditional requests and health route added to the core)
+**Last Updated:** 2026-10-28 (reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
+added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
+route added to the core)

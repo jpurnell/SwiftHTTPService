@@ -3,8 +3,9 @@
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
 **Status:** pre-0.1, untagged, private. The core (request, response, problem, middleware, router, conditional
-requests, health route, validated configuration) and the HTTP/1.1 transport exist and are tested; nothing runs on
-them yet. Design: `project/plans/proposals/DesignProposal_SwiftHTTPService.md`.
+requests, health route, validated configuration) and the HTTP/1.1 transport exist and are tested. ~~nothing runs on
+them yet.~~ Its first consumer, `ijs-dashboard-server`, has served on it since 2026-10-28 (Teletran 2), naming it by
+path because there is no release yet; a 0.1.0 is needed. Design: `project/plans/proposals/DesignProposal_SwiftHTTPService.md`.
 
 ## What it is
 
