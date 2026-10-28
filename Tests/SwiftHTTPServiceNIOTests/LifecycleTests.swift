@@ -199,6 +199,55 @@ struct LifecycleTests {
         await running.server.shutdown()
     }
 
+    // MARK: Nothing outlives the loops
+
+    /// NIO prints "Cannot schedule tasks on an EventLoop that has already shut down" to standard error when
+    /// something touches a stopped loop, and says it will become a forced crash. The cause that was found:
+    /// `ServerQuiescingHelper`'s `deinit` completes a promise on a loop, so releasing the helper after the
+    /// loops had stopped was enough. This watches standard error for the message.
+    @Test("Starting, failing to start and shutting down touch no stopped event loop, plain or TLS")
+    func shutdownLeavesNothingOnAStoppedLoop() async throws {
+        let material = try TestTLS()
+        defer { material.cleanUp() }
+        let captured = try await captureStandardError {
+            let plain = try await startServer()
+            await plain.server.shutdown()
+            let secure = try await startServer(tls: material.files)
+            await secure.server.shutdown()
+            // A start that fails to bind stops its loops too.
+            let taken = try await startServer()
+            let again = HTTPServer(configuration: try ServiceConfiguration(port: UInt16(taken.address.port)), handler: ok())
+            let second = await Task { try await again.start() }.result
+            if case .success = second { Issue.record("the second bind to a taken port succeeded") }
+            await taken.server.shutdown()
+            try await Task.sleep(for: .milliseconds(100))     // let a late release, if there is one, happen
+        }
+        #expect(!captured.contains("already shut down"), "standard error said: \(captured)")
+    }
+
+    @Test("A handler that finishes after the server has been shut down schedules nothing on the stopped loops, over HTTP/1.1")
+    func handlerOutlivesShutdown() async throws {
+        let gate = HoldGate()
+        var limits = Limits()
+        limits.shutdownGrace = .milliseconds(200)
+        let captured = try await captureStandardError {
+            let running = try await startServer(limits: limits, handler: { _ in
+                await gate.wait()
+                return Response(status: .ok)
+            })
+            try await withGroup { group in
+                let client = try await RawClient.connect(to: running.address, group: group)
+                try await client.send("GET /x HTTP/1.1\r\nHost: h\r\n\r\n")
+                try await Task.sleep(for: .milliseconds(150))              // the request is in the handler
+                await running.server.shutdown()                            // the grace ends and the connection is cut
+                await gate.release()                                       // now the handler returns, to nobody
+                try await Task.sleep(for: .milliseconds(200))
+                await client.close()
+            }
+        }
+        #expect(!captured.contains("already shut down"), "standard error said: \(captured)")
+    }
+
     // MARK: TLS
 
     @Test("With TLS configured, a client that trusts the authority gets its response, and HTTP/1.1 is what was negotiated")

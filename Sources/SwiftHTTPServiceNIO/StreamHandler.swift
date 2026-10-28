@@ -40,6 +40,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     private let server: ServerContext
     private var state: State = .idle
     private var inFlight: Task<Response, any Error>?
+    private let liveness = ChannelLiveness()
     private var bodyTimer: Scheduled<Void>?
 
     init(server: ServerContext) {
@@ -205,8 +206,11 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         let loopSelf = NIOLoopBound(self, eventLoop: context.eventLoop)
         let isHead = receiving.isHead
         let eventLoop = context.eventLoop
+        let liveness = self.liveness
         Task {
             let result = await task.result
+            // The channel may have closed, and the loop stopped with it, while the handler ran.
+            guard liveness.isOpen else { return }
             // Back onto the stream's loop before touching the context or the handler.
             eventLoop.execute {
                 loopSelf.value.completed(result, isHead: isHead, context: loopContext.value)
@@ -276,6 +280,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     }
 
     func channelInactive(context: ChannelHandlerContext) {
+        liveness.close()
         cancelBodyTimer()
         inFlight?.cancel()
         inFlight = nil

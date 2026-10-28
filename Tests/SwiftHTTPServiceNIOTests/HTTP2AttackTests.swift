@@ -254,25 +254,29 @@ struct HTTP2AttackTests {
         }
     }
 
-    @Test("A handler that never returns is cut off at the end of the grace period, and shutdown still completes")
+    @Test("A handler that never returns is cut off at the end of the grace period, shutdown still completes, and the handler finishing later touches no stopped loop")
     func graceEnds() async throws {
         var limits = Limits()
         limits.shutdownGrace = .milliseconds(300)
         let gate = HoldGate()
-        try await withServer(limits: limits, handler: { _ in
-            await gate.wait()
-            return Response(status: .ok)
-        }) { running, material, group in
-            let connection = try await connect(running, material, group)
-            try await connection.send(H2Wire.headers(stream: 1, endStream: true))
-            try await Task.sleep(for: .milliseconds(200))
-            let started = ContinuousClock.now
-            await running.server.shutdown()
-            #expect(ContinuousClock.now - started < .seconds(5))
-            #expect(try await client(connection, closesWithin: .seconds(3)))
-            await gate.release()
-            await connection.close()
+        let captured = try await captureStandardError {
+            try await withServer(limits: limits, handler: { _ in
+                await gate.wait()
+                return Response(status: .ok)
+            }) { running, material, group in
+                let connection = try await connect(running, material, group)
+                try await connection.send(H2Wire.headers(stream: 1, endStream: true))
+                try await Task.sleep(for: .milliseconds(200))
+                let started = ContinuousClock.now
+                await running.server.shutdown()
+                #expect(ContinuousClock.now - started < .seconds(5))
+                #expect(try await client(connection, closesWithin: .seconds(3)))
+                await gate.release()                                       // the handler returns, to nobody
+                try await Task.sleep(for: .milliseconds(200))
+                await connection.close()
+            }
         }
+        #expect(!captured.contains("already shut down"), "standard error said: \(captured)")
     }
 
     private func client(_ connection: RawH2, closesWithin timeout: Duration) async throws -> Bool {
