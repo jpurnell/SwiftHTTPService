@@ -24,6 +24,27 @@ struct ServiceConfigurationTests {
         #expect(limits.idleTimeout == .seconds(60))
         #expect(limits.maximumConnections == 256)
         #expect(limits.shutdownGrace == .seconds(10))
+        #expect(limits.maximumConcurrentStreams == 100)     // the RFC 9113 suggested minimum (design H3)
+        #expect(configuration.protocols == .http1AndHTTP2)  // design H2
+    }
+
+    @Test("The protocols can be narrowed to HTTP/1.1 and nothing else is changed by it")
+    func protocolsNarrowed() throws {
+        let narrowed = try ServiceConfiguration(protocols: .http1)
+        let defaults = try ServiceConfiguration()
+        #expect(narrowed.protocols == .http1)
+        #expect(narrowed.host == defaults.host)
+        #expect(narrowed.port == defaults.port)
+        #expect(narrowed.limits == defaults.limits)
+    }
+
+    @Test("The stream bound accepts its edges, 1 and 1000")
+    func streamBoundEdges() throws {
+        var limits = Limits()
+        limits.maximumConcurrentStreams = 1
+        #expect(try ServiceConfiguration(limits: limits).limits.maximumConcurrentStreams == 1)
+        limits.maximumConcurrentStreams = 1000
+        #expect(try ServiceConfiguration(limits: limits).limits.maximumConcurrentStreams == 1000)
     }
 
     @Test("The default limits are themselves valid")
@@ -61,6 +82,9 @@ struct ServiceConfigurationTests {
     }
 
     static let refused: [Case] = [
+        Case(name: "no concurrent streams", field: "limits.maximumConcurrentStreams", reason: .outOfRange, build: limits { $0.maximumConcurrentStreams = 0 }),
+        Case(name: "negative concurrent streams", field: "limits.maximumConcurrentStreams", reason: .outOfRange, build: limits { $0.maximumConcurrentStreams = -1 }),
+        Case(name: "too many concurrent streams", field: "limits.maximumConcurrentStreams", reason: .outOfRange, build: limits { $0.maximumConcurrentStreams = 1001 }),
         Case(name: "empty host", field: "host", reason: .empty, build: { try ServiceConfiguration(host: "") }),
         Case(name: "blank host", field: "host", reason: .empty, build: { try ServiceConfiguration(host: "   ") }),
         Case(name: "host with a space", field: "host", reason: .malformed, build: { try ServiceConfiguration(host: "a b") }),

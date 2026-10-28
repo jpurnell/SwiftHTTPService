@@ -70,6 +70,9 @@ public struct Limits: Sendable, Equatable {
     public var maximumConnections: Int
     /// How long a graceful shutdown lets in-flight requests finish. Zero to ten minutes. Default 10 s.
     public var shutdownGrace: Duration
+    /// The most HTTP/2 streams a peer may have open on one connection at once. 1 to 1000. Default 100,
+    /// the minimum RFC 9113 suggests; it is a recommendation and not a measurement. Ignored for HTTP/1.1.
+    public var maximumConcurrentStreams: Int
 
     /// Creates limits; anything not given is the default.
     public init(
@@ -80,7 +83,8 @@ public struct Limits: Sendable, Equatable {
         bodyReadTimeout: Duration = .seconds(30),
         idleTimeout: Duration = .seconds(60),
         maximumConnections: Int = 256,
-        shutdownGrace: Duration = .seconds(10)
+        shutdownGrace: Duration = .seconds(10),
+        maximumConcurrentStreams: Int = 100
     ) {
         self.maximumHeaderBytes = maximumHeaderBytes
         self.maximumHeaderCount = maximumHeaderCount
@@ -90,6 +94,7 @@ public struct Limits: Sendable, Equatable {
         self.idleTimeout = idleTimeout
         self.maximumConnections = maximumConnections
         self.shutdownGrace = shutdownGrace
+        self.maximumConcurrentStreams = maximumConcurrentStreams
     }
 }
 
@@ -110,11 +115,22 @@ public struct ServiceConfiguration: Sendable, Equatable {
     public let tls: TLSFiles?
     /// The bounds.
     public let limits: Limits
+    /// Which versions of HTTP the server speaks.
+    public let protocols: Protocols
+
+    /// Which versions of HTTP a server speaks. HTTP/2 is only ever negotiated over TLS (through ALPN):
+    /// plaintext is HTTP/1.1, and there is no `h2c`.
+    public enum Protocols: Sendable, Equatable {
+        /// HTTP/1.1 only.
+        case http1
+        /// HTTP/2 where the peer negotiates it, otherwise HTTP/1.1.
+        case http1AndHTTP2
+    }
 
     /// Creates a configuration.
     ///
     /// - Throws: ``ConfigurationError`` naming the first field that is refused.
-    public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits()) throws(ConfigurationError) {
+    public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits(), protocols: Protocols = .http1AndHTTP2) throws(ConfigurationError) {
         try Self.validate(host: host)
         if let tls {
             try Self.validate(path: tls.certificateChainPath, field: "tls.certificateChainPath")
@@ -125,6 +141,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
         self.port = port
         self.tls = tls
         self.limits = limits
+        self.protocols = protocols
     }
 
     // MARK: Validation
@@ -158,6 +175,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
         try require(limits.bodyReadTimeout > .zero && limits.bodyReadTimeout <= hour, "limits.bodyReadTimeout")
         try require(limits.idleTimeout > .zero && limits.idleTimeout <= hour, "limits.idleTimeout")
         try require((1...100_000).contains(limits.maximumConnections), "limits.maximumConnections")
+        try require((1...1000).contains(limits.maximumConcurrentStreams), "limits.maximumConcurrentStreams")
         try require(limits.shutdownGrace >= .zero && limits.shutdownGrace <= .seconds(600), "limits.shutdownGrace")
     }
 
