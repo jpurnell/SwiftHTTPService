@@ -32,7 +32,8 @@ let address = try await server.start()      // the port actually bound (port 0 a
 await server.shutdown()                     // graceful: drains, then closes after the grace period
 ```
 
-HTTP/1.1 over TCP, with TLS (1.2 or newer, HTTP/1.1 only) when configured. `ServiceConfiguration` holds the
+HTTP/1.1 over TCP, and over TLS (1.2 or newer) HTTP/2 as well, picked by ALPN (`ServiceConfiguration.protocols`
+narrows it to HTTP/1.1; plaintext is always HTTP/1.1, with no `h2c`). `ServiceConfiguration` holds the
 certificate and key as **paths**; the identity is loaded, judged and reloaded by the owner's **SwiftTLSKit**:
 a missing or unreadable file, a key others can read, a key that does not match, an empty or invalid chain
 and an expired leaf each stop `start()` with `HTTPServerError.tlsIdentity(...)` carrying SwiftTLSKit's typed
@@ -62,13 +63,13 @@ bare line feeds (by NIO's parser); a target that is not strict origin-form (by t
 is a fixed `application/problem+json` body that never repeats anything the peer sent.
 
 **Not supported, on purpose:** pipelining (the first request is answered with `Connection: close` and the second
-is never run), `Upgrade`, and HTTP/2. **Not bounded here:** the time a handler takes. A handler that never
+is never run), `Upgrade`, `h2c`, client trailers, server push and HTTP/2 priorities. **Not bounded here:** the time a handler takes. A handler that never
 returns keeps its connection open until it returns, the peer leaves, or a shutdown's grace period ends.
 
 ## Dependencies
 
 The core needs `swift-http-types` and nothing else. The transport adds Apple's `swift-nio` and
-`swift-nio-extras` (for `ServerQuiescingHelper`, which does the graceful shutdown) and the owner's
+`swift-nio-extras` (for `ServerQuiescingHelper`, which does the graceful shutdown), `swift-nio-http2` and the owner's
 **SwiftTLSKit** (`0.2.1`, by URL, `.upToNextMinor`; private), of the transport target only.
 Resolving `swift-nio-extras` also resolves its own dependencies, one of which, `swift-service-lifecycle`, is
 the Swift Server Workgroup's and not Apple's; nothing in this package links it.

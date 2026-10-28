@@ -12,7 +12,7 @@ is routes and handlers, not sockets. First consumer: `ijs-dashboard-server` (19 
 auth, ETag/304, `application/problem+json`, TLS, graceful shutdown, one process for many tenants).
 
 ### Non-goals
-- Not a web framework: no templating, no ORM, no sessions, no WebSockets, no HTTP/2 (yet).
+- Not a web framework: no templating, no ORM, no sessions, no WebSockets.
 - No authentication or authorisation. Those are the server's, and are middleware.
 - Not MCP. `SwiftMCPServer` stays as it is; this may be adopted by it later.
 
@@ -86,7 +86,7 @@ lifecycle. Mutation checks by hand on every limit.
 
 ## 5. Decisions needed
 
-- **D1 — HTTP/2.** Not now. HTTP/1.1 is enough for one consumer behind a home router.
+- **D1 — HTTP/2.** ~~Not now. HTTP/1.1 is enough for one consumer behind a home router.~~ Reversed 2026-10-28 at the owner's request: see `DesignProposal_HTTP2.md`.
 - **D2 — Linux.** The kit uses nothing Apple-only, so Linux should build; it is not tested until the
   Linux CI gap (Stack Map #3) is closed. Stated, not promised.
 - **D3 — adopting it in `SwiftMCPServer`.** Out of scope here.

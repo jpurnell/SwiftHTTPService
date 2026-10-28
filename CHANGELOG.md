@@ -6,6 +6,45 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added: HTTP/2 (`SwiftHTTPServiceNIO`)
+Design: `project/plans/proposals/DesignProposal_HTTP2.md`, which reverses D1 of the first design ("not now") at the
+owner's request, 2026-10-28.
+- Over TLS the server offers `h2` and `http/1.1` in ALPN and the negotiated protocol picks the pipeline. Plaintext
+  stays HTTP/1.1: no `h2c`, no `Upgrade`. `ServiceConfiguration.protocols` (`.http1`, `.http1AndHTTP2`, default
+  both) narrows it; a protocol that was not offered is never selected, whatever the peer sends.
+- `Limits.maximumConcurrentStreams` (1 to 1000, default 100, the RFC 9113 suggested minimum: a recommendation, not
+  a measurement). Advertised in SETTINGS and enforced.
+- One `StreamHandler` per stream, written on raw frames and not on `NIOHTTPTypesHTTP2`, whose codec has
+  `preconditionFailure` paths a peer can reach. The version-independent rules (`RequestRules`, `ResponseRules`,
+  `Refusal.response`) are shared with HTTP/1.1; its tests passed unchanged through the extraction.
+- A TLS connection that never finishes its handshake is closed at the idle timeout (`HandshakeDeadline`), as the
+  HTTP/1.1 pipeline's idle timer used to do before handlers were added after negotiation.
+- Dependency: Apple's `swift-nio-http2` (`from: "1.46.0"`), transport target only.
+- Tests: 137 in the transport, from 91. Over real TLS with an h2 client; 22 malformed and 8 refused requests
+  table-driven from RFC 9113 section 8; the attacks by hand-built frames, with a control showing modest use of
+  the same frames is served.
+- 27 hand mutations of the HTTP/2 code. 23 were caught. Four survived and none now: three were redundant code,
+  removed (a byte check on the target that the core's parser already makes, which was never seen red; the
+  grace time given to the library's connection management, which the server's own deadline repeats), and one
+  was a missing test (two identical `Content-Length` fields, which the library lets through and the handler
+  refuses with 400).
+
+### What `swift-nio-http2` defends and what this package does (measured, not assumed)
+- **The library:** all 22 malformed-request cases (pseudo-headers, upper-case names, connection-specific fields,
+  CR/LF/NUL, `Content-Length` that is not digits or disagrees with the body) as a stream error of
+  `PROTOCOL_ERROR`; rapid reset, small CONTINUATION floods, PING, SETTINGS and empty-DATA floods, each with a
+  `GOAWAY` of `ENHANCE_YOUR_CALM` (11); a huge CONTINUATION block with `PROTOCOL_ERROR` (1); a stream past the
+  advertised bound; idle connections and the `GOAWAY` handshake of a graceful shutdown
+  (`NIOHTTP2ServerConnectionManagementHandler`).
+- **This package:** the header-list size (the library advertises `SETTINGS_MAX_HEADER_LIST_SIZE` and does not
+  enforce it; counted as RFC 9113 section 6.5.2 does, name plus value plus 32), the header count, the body bound
+  with a `NO_ERROR` reset sent only after the response has been written (queued behind it, the reset dropped the
+  response's own data), the body timer, `Host` against `:authority`, `Expect`, repeated `Content-Length`, the
+  core's target parse, client trailers (refused), and the fixed problem bodies.
+- **Not applied to HTTP/2:** `headerReadTimeout`. A header block arrives in one frame sequence bounded by the
+  library's CONTINUATION limit; a connection with no stream open is bounded by `idleTimeout`.
+
+
 ## [0.1.0] - 2026-10-28
 
 First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.

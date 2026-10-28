@@ -102,6 +102,8 @@ struct HTTP2ValidationTests {
              expected: .status(400)),
         Case(name: "a target that is not origin-form", block: [(":method", "GET"), (":scheme", "https"), (":path", "a"), (":authority", "localhost")],
              expected: .status(400)),
+        Case(name: "two identical Content-Lengths", block: [(":method", "POST"), (":scheme", "https"), (":path", "/x"), ("content-length", "3"), ("content-length", "3")],
+             body: Data("abc".utf8), expected: .status(400)),
         Case(name: "Host and :authority that disagree", block: good + [("host", "elsewhere")], expected: .status(400)),
         Case(name: "an Expect other than 100-continue", block: good + [("expect", "magic")], expected: .status(417)),
         Case(name: "trailers from the client", block: [(":method", "POST"), (":scheme", "https"), (":path", "/x")], body: Data("abc".utf8),

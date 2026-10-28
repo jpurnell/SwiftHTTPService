@@ -71,11 +71,12 @@ enum PipelineBuilder {
             HTTP2Setting(parameter: .maxHeaderListSize, value: limits.maximumHeaderBytes),
             HTTP2Setting(parameter: .initialWindowSize, value: 65535),
         ]
-        // Idle connections, and the GOAWAY of a graceful shutdown with its grace deadline, are the library's own
-        // connection management; the configured idle timeout and shutdown grace are what it is given.
+        // Idle connections, and the GOAWAY of a graceful shutdown, are the library's own connection management.
+        // It is given no grace time: the server's own deadline (HTTPServer.performShutdown) closes whatever is
+        // left when the configured grace ends, for both versions of HTTP, and a second timer would only repeat it.
         let management = NIOHTTP2ServerConnectionManagementHandler(
             eventLoop: operations.eventLoop,
-            configuration: .init(maxIdleTime: limits.idleTimeout.timeAmount, maxAge: nil, maxGraceTime: limits.shutdownGrace.timeAmount, keepalive: nil))
+            configuration: .init(maxIdleTime: limits.idleTimeout.timeAmount, maxAge: nil, maxGraceTime: nil, keepalive: nil))
         _ = try operations.configureHTTP2Pipeline(
             mode: .server, connectionConfiguration: connection, streamConfiguration: .init(),
             streamDelegate: management.http2StreamDelegate,

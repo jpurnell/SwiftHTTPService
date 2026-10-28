@@ -69,14 +69,15 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
   SwiftTLSKit does reload). Reasons are in `CHANGELOG.md` and pinned by tests.
 - [ ] A reload trigger (SIGHUP or a timer) is the executable's: `reloadTLS()` is the hook.
 - [x] ~~`../SwiftTLSKit` is a sibling path dependency~~ now a URL dependency, pinned to `0.2.1` (no new SwiftTLSKit tag was needed).
-- [ ] HTTP/2, only if a consumer needs it.
+- [x] ~~HTTP/2, only if a consumer needs it.~~ Done 2026-10-28 at the owner's request, before any consumer asked: it shipped
+  despite the stated bar. `DesignProposal_HTTP2.md`; 137 transport tests; 27 hand mutations, all caught or removed.
 
 ### What's Next
 - [x] `Router`, `Conditional`, `Router.addHealth()`: 66 tests, mutations caught.
 - [x] `ServiceConfiguration` and the transport: HTTP/1.1, limits, timeouts, connection cap, graceful shutdown, TLS through SwiftTLSKit.
 - [ ] Rate limiter, request id, access log middleware.
 - [ ] **Order (owner, 2026-10-28):** v0.1.0 is a milestone, not the finish. Get the kit feature complete first (the
-  middleware above, the reload trigger, the shutdown warning below, and HTTP/2 if a consumer needs it), then migrate
+  middleware above, the reload trigger and the shutdown warning below; ~~HTTP/2~~ is done), then migrate
   the services that can use it.
 - [ ] Migrate the other hand-rolled servers, after the kit is feature complete and has served real traffic: `project/plans/proposals/MigrationPlan_HandRolledServers.md`.
   **Real traffic began 2026-10-28:** `ijs-dashboard-server`, deployed on Teletran 2 (port 9140), runs on this kit. The
@@ -134,11 +135,11 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 - [ ] 0.1.0: SwiftTLSKit by URL, then the tag, then `ijs-dashboard-server` names it by version
 
 ### Future
-- HTTP/2, only if a consumer needs it.
+- ~~HTTP/2, only if a consumer needs it.~~ Shipped ahead of any consumer (2026-10-28); see Current Status.
 
 ---
 
-**Last Updated:** 2026-10-28 (v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-10-28 (HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)

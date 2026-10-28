@@ -28,11 +28,7 @@ enum RequestRules {
 
     /// Whether the core's strict origin-form parse accepts this target. Checked before any body is read, so
     /// a refused target costs nothing.
-    ///
-    /// Visible ASCII only: HTTP/1.1's parser cannot deliver a space or a control character in a target, but
-    /// HTTP/2 carries `:path` as a length-delimited string and can, so the rule is stated here for both.
     static func isAcceptableTarget(method: HTTPRequest.Method, target: String, fields: HTTPFields) -> Bool {
-        guard target.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7F }) else { return false }
         let parsed = Result { try Request(method: method, target: target, headers: fields, body: Data()) }
         guard case .success = parsed else { return false }
         return true

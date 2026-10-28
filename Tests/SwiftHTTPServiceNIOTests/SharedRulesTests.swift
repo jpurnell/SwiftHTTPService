@@ -45,7 +45,7 @@ struct SharedRulesTests {
         #expect(!RequestRules.isAcceptableTarget(method: .get, target: "https://x/a", fields: HTTPFields()))
         #expect(!RequestRules.isAcceptableTarget(method: .get, target: "//a", fields: HTTPFields()))
         #expect(!RequestRules.isAcceptableTarget(method: .get, target: "", fields: HTTPFields()))
-        // Visible ASCII only: HTTP/2 can carry what HTTP/1.1's parser never delivers.
+        // The core refuses what HTTP/2 can carry and HTTP/1.1's parser never delivers: pinned here, since HTTP/2 relies on it.
         #expect(!RequestRules.isAcceptableTarget(method: .get, target: "/a b", fields: HTTPFields()))
         #expect(!RequestRules.isAcceptableTarget(method: .get, target: "/a\tb", fields: HTTPFields()))
         #expect(!RequestRules.isAcceptableTarget(method: .get, target: "/a\u{7F}", fields: HTTPFields()))
