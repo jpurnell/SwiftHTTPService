@@ -58,12 +58,12 @@ struct ContentLengthTests {
 
     @Test("Digits, with whitespace around them, are a length", arguments: valid)
     func accepted(_ pair: (String, Int)) {
-        #expect(ConnectionHandler.parseLength(pair.0) == pair.1)
+        #expect(RequestRules.parseLength(pair.0) == pair.1)
     }
 
     @Test("Anything else is not a length", arguments: invalid)
     func refused(_ text: String) {
-        #expect(ConnectionHandler.parseLength(text) == nil)
+        #expect(RequestRules.parseLength(text) == nil)
     }
 }
 

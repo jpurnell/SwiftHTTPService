@@ -72,7 +72,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
             context.triggerUserOutboundEvent(GuardSignal.discard, promise: nil)
         case (.body(var chunk), .receiving(var receiving)):
             let limit = server.configuration.limits.maximumBodyBytes
-            guard receiving.body.readableBytes + chunk.readableBytes <= limit else {
+            guard RequestRules.bodyFits(received: receiving.body.readableBytes, incoming: chunk.readableBytes, limit: limit) else {
                 cancelBodyTimer()
                 refuse(.bodyTooLarge, context: context)
                 return
@@ -99,13 +99,12 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
             return
         }
         // The target is checked now, before any body is read, so a refused target costs nothing.
-        let parsed = Result { try Request(method: validated.method, target: head.uri, headers: validated.fields, body: Data()) }
-        guard case .success = parsed else {
+        guard RequestRules.isAcceptableTarget(method: validated.method, target: head.uri, fields: validated.fields) else {
             refuse(.malformedTarget, context: context)
             return
         }
         let limit = server.configuration.limits.maximumBodyBytes
-        if let length = validated.declaredLength, length > limit {
+        if let length = validated.declaredLength, !RequestRules.declaredLengthFits(length, limit: limit) {
             refuse(.bodyTooLarge, context: context)
             return
         }
@@ -138,7 +137,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         var expectations: [String] = []
         for (name, value) in head.headers {
             guard let fieldName = HTTPField.Name(name),
-                  !value.utf8.contains(where: { $0 == 0 || $0 == 0x0A || $0 == 0x0D })
+                  RequestRules.isCleanFieldValue(value)
             else { return .failure(.badRequest) }
             switch name.lowercased() {
             case "content-length": lengths.append(value)
@@ -157,7 +156,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         var declaredLength: Int?
         var chunked = false
         if !lengths.isEmpty {
-            guard lengths.count == 1, let length = Self.parseLength(lengths[0]) else { return .failure(.badRequest) }
+            guard lengths.count == 1, let length = RequestRules.parseLength(lengths[0]) else { return .failure(.badRequest) }
             declaredLength = length
         }
         if !codings.isEmpty {
@@ -181,16 +180,6 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
 
     private static func isAtLeast11(_ version: HTTPVersion) -> Bool {
         version.major > 1 || (version.major == 1 && version.minor >= 1)
-    }
-
-    /// A Content-Length is ASCII digits and nothing else (surrounding whitespace aside): no sign, no
-    /// hexadecimal, no list, and small enough to be a real length.
-    static func parseLength(_ value: String) -> Int? {
-        let trimmed = value.trimmingCharacters(in: .whitespaces)
-        guard trimmed.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
-            return nil
-        }
-        return Int(trimmed)
     }
 
     // MARK: Running the handler
@@ -226,12 +215,11 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private func completed(_ result: Result<Response, any Error>, isHead: Bool, context: ChannelHandlerContext) {
         inFlight = nil
         guard context.channel.isActive else { return }
-        switch result {
-        case .success(let response) where (200...599).contains(response.status.code):
+        switch ResponseRules.outcome(of: result) {
+        case .success(let response):
             write(response, isHead: isHead, close: closeAfterResponse, context: context)
-        case .success, .failure:
-            // A thrown error, or a status that is not a final one. The text of an error is never sent.
-            refuse(.internalError, context: context)
+        case .failure(let refusal):
+            refuse(refusal, context: context)
         }
     }
 
@@ -240,31 +228,24 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private func refuse(_ refusal: Refusal, context: ChannelHandlerContext) {
         cancelBodyTimer()
         context.triggerUserOutboundEvent(GuardSignal.discard, promise: nil)
-        var fields = HTTPFields()
-        fields[.contentType] = "application/problem+json"
-        write(Response(status: HTTPResponse.Status(code: refusal.statusCode), headers: fields, body: refusal.body),
-              isHead: false, close: true, context: context)
+        write(refusal.response, isHead: false, close: true, context: context)
     }
 
     private func write(_ response: Response, isHead: Bool, close: Bool, context: ChannelHandlerContext) {
         state = close ? .closing : .idle
+        let prepared = ResponseRules.prepare(response)
         var headers = HTTPHeaders()
-        for field in response.headers {
-            switch field.name.rawName.lowercased() {
-            case "content-length", "connection", "date", "transfer-encoding", "keep-alive": continue
-            default: headers.add(name: field.name.rawName, value: field.value)
-            }
-        }
+        for field in prepared.fields { headers.add(name: field.name.rawName, value: field.value) }
         headers.add(name: "Date", value: HTTPDate.string(for: Date()))
         headers.add(name: "Connection", value: close ? "close" : "keep-alive")
-        let code = response.status.code
-        let hasBody = !(code < 200 || code == 204 || code == 304)
-        if hasBody { headers.add(name: "Content-Length", value: String(response.body.count)) }
+        let code = prepared.code
+        let hasBody = prepared.hasBody
+        if hasBody { headers.add(name: "Content-Length", value: String(prepared.body.count)) }
 
         let head = HTTPResponseHead(version: .http1_1, status: HTTPResponseStatus(statusCode: code), headers: headers)
         context.write(wrapOutboundOut(.head(head)), promise: nil)
-        if hasBody, !isHead, !response.body.isEmpty {
-            context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: response.body)))), promise: nil)
+        if hasBody, !isHead, !prepared.body.isEmpty {
+            context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: prepared.body)))), promise: nil)
         }
         let finished = context.eventLoop.makePromise(of: Void.self)
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: finished)
