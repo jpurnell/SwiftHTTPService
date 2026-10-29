@@ -27,6 +27,17 @@ path because there is no release yet; a 0.1.0 is needed. Design: `project/plans/
 - `accessLog(sink:)`: an `AccessLogEntry` per request (method, path without its query, status, bytes, duration,
   id, peer) and a one-line `key=value` form in which no value can end its field or start another line. The
   query, headers and body are never recorded.
+- `Response.html/.text/.javascript/.css/.png`: the type (with a charset for text) and `nosniff`. `Response.redirect`: a
+  path-absolute reference or a named origin matched whole, so a redirect built from input is never an open redirect.
+  `Cookie`: validated against RFC 6265, `Secure`, `HttpOnly` and `SameSite=Lax` by default, and the `__Host-` and
+  `__Secure-` rules enforced; `Request.cookies` reads leniently and never throws.
+- `Request.form()`: `application/x-www-form-urlencoded`, strictly (a `%` needs two hex digits, a raw space or control
+  byte is refused, bounded fields, duplicates kept in order).
+- `Request.httpVersion` and `Request.peerAddress`: which version carried a request, and the socket's peer when a
+  trusted proxy reported a different client in `remoteAddress`.
+- `Response.streaming(status:headers:produce:)` and `Response.eventStream`: a body written while it is sent, with
+  backpressure, and server-sent events written strictly (a name, id or comment with a line break is refused).
+- `Router.add(..., maximumBodyBytes:, middleware:)`: a body bound and layers for one route.
 - `RateLimiter`, `rateLimit(_:key:)`: a per-client limit (GCRA, integer nanoseconds, one number per client) with
   a bounded table, `429` as a problem with `Retry-After`. Behind a proxy, key on what the proxy reports.
   Order, outermost first: access log, request id, rate limiter, the rest.
@@ -66,12 +77,24 @@ not the value.
 | `maximumConnections` | 256 | 1 to 100,000 | the connection is closed at once with nothing written |
 | `shutdownGrace` | 10 s | 0 to 10 min | whatever is still open when it ends is closed |
 | `maximumConcurrentStreams` | 100 | 1 to 1000 | HTTP/2 only. Advertised in SETTINGS and enforced; a stream past it is refused |
+| `maximumStreamDuration` | 1 h | up to a day | a streaming response is cut off, whether its producer is writing or idle, and the producer is cancelled |
+| `maximumStreamBytes` | 1 GiB | 1 to 1 TiB | the write that passes it is refused (`StreamError.byteLimit`) and the stream ends |
+| `streamWriteTimeout` | 30 s | up to 1 h | one write that cannot finish (the peer does not read) ends the stream |
 
 **Refused as ambiguous (`400`, close):** a `Content-Length` with a `Transfer-Encoding`; a duplicate, signed,
 hexadecimal, listed or non-numeric `Content-Length`; any `Transfer-Encoding` other than exactly `chunked` (and
 any on HTTP/1.0); a missing or duplicate `Host` on HTTP/1.1; a header value with CR, LF or NUL; folded lines and
 bare line feeds (by NIO's parser); a target that is not strict origin-form (by the core's `Request`). A refusal
 is a fixed `application/problem+json` body that never repeats anything the peer sent.
+
+**Behind a proxy:** `ServiceConfiguration(trustedProxies:forwarding:)` names the proxies whose word is believed
+(CIDR blocks, nothing trusted by default; the block of every address is refused) and how they speak:
+`.xForwardedFor`, read from the right (the first address that is not itself a trusted proxy is the client), or
+`.proxyProtocol` (version 1 or 2, read before TLS: required from a trusted peer, refused from anyone else who
+begins with one). Forwarded information is believed only from a trusted peer. `ServiceConfiguration(connections:)`
+can ask for `.closeAfterResponse`, for clients that cannot reuse a connection. `HTTPServer(refusals:)` gives the
+transport's own refusals a body of the server's choosing (the status stays the transport's), and
+`HTTPServer(configuration:router:)` wires each route's own body bound to the transport.
 
 **Not supported, on purpose:** pipelining (the first request is answered with `Connection: close` and the second
 is never run), `Upgrade`, `h2c`, client trailers, server push and HTTP/2 priorities. **Not bounded here:** the time a handler takes. A handler that never

@@ -6,6 +6,71 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-29
+
+The kit now covers everything the servers it replaces need (owner's decisions D2 and D4, 2026-10-29), so that none of
+them keeps a second system. Nothing a caller of 0.3.0 writes changes: every addition is a new type, or a parameter
+with a default. Before 1.0 this package signals a source break with the minor version, and several public enums
+gained cases (`RouterError.invalidBodyLimit`), hence 0.4.0. The design is `project/plans/proposals/DesignProposal_0.4.0.md`.
+
+### Added
+- **Typed responses, redirects, cookies.** `Response.html/.text/.javascript/.css/.png` (charset, `nosniff`,
+  optional `Cache-Control`); `Response.redirect(to:status:allowing:)`, which accepts a path-absolute reference or an
+  origin named by the caller, matched whole (`https://a.example` does not admit `https://a.example.evil` or
+  `https://a.example@evil`), and refuses a backslash, space or control character; `Cookie`, validated against
+  RFC 6265 (`SameSite=None` needs `Secure`, `__Host-` and `__Secure-` enforced, `Max-Age` up to 400 days), written by
+  `Response.setting(cookie:)` as one `Set-Cookie` each; `Request.cookies`, lenient and non-throwing.
+- **Form bodies.** `Request.form()` for `application/x-www-form-urlencoded`, strict: a `+` is a space, `%XX` needs
+  two hex digits, a raw space or control or non-ASCII byte, an empty segment or name, a decoded NUL and invalid UTF-8
+  are refused; bounded fields and field length; duplicates kept.
+- **`Request.httpVersion`** (`HTTPProtocolVersion`: 1.0, 1.1, 2) and **`Request.peerAddress`**.
+- **Transport refusal hooks.** `HTTPServer(configuration:handler:refusals:)` with `RefusalHooks(respond:observe:)`
+  and `TransportRefusal`: the server gives the transport's own refusals a body and headers, and counts them. The
+  status, closing the connection and the transport's headers stay the transport's. (On `HTTPServer`, not on
+  `ServiceConfiguration`: that type is `Equatable`, and a closure is not.)
+- **Per-route limits.** `Router.add/get/post/...(_:maximumBodyBytes:middleware:_:)`; the router answers
+  `maximumBodyBytes(for:target:)` from the head alone by the same rule that serves the request, and
+  `HTTPServer(configuration:router:middleware:refusals:)` wires it to the transport, which asks after the head and
+  before any body. A route may lower or raise the global bound (0 to 64 MiB; otherwise a registration error that
+  names the pattern).
+- **`ServiceConfiguration(connections:)`**: `.keepAlive` (default) or `.closeAfterResponse`.
+- **Trusted proxies.** `NetworkBlock` (CIDR, strict Swift IPv4 and IPv6 parsers: no leading zeros, no zone ids, no
+  signs; `/0` refused), `ServiceConfiguration(trustedProxies:forwarding:)` (forwarding with nobody trusted is a
+  configuration error). `.xForwardedFor` reads from the right and believes the header only from a trusted peer.
+  `.proxyProtocol` reads version 1 and 2, before TLS, at the very front of the pipeline: required from a trusted
+  peer, refused from anyone else who begins with a header, and anyone else's bytes pass on untouched.
+  `NetworkBlock.canonicalAddress` gives one text per address (IPv4-mapped IPv6 is its IPv4 self).
+- **Streaming responses.** `Response.streaming(status:headers:produce:)`; the `ResponseWriter` a producer writes to
+  returns when the connection has taken the bytes, so a slow reader slows its producer and nothing queues without
+  bound. HTTP/1.1 chunks; HTTP/2 `DATA` frames paced by flow control. To an HTTP/1.0 client and in answer to `HEAD`
+  the head is sent unframed and the connection closes; a status with no body (204, 304) is an ordinary response and
+  the producer is not run. New `Limits`: `maximumStreamDuration` (1 h), `maximumStreamBytes` (1 GiB),
+  `streamWriteTimeout` (30 s). A producer that throws, a limit, a peer that leaves or stops reading, and a shutdown's
+  grace all end the stream (the HTTP/1.1 connection closes; the HTTP/2 stream is reset, with `INTERNAL_ERROR` for a
+  failing producer and `CANCEL` for a limit, and the connection and its other streams are untouched) and cancel the
+  producer. The limits cut a producer off whether or not it ever looks at cancellation. `StreamError` says why.
+- **Streams in the access log.** A streaming response is logged when its stream ends, with the bytes streamed;
+  `ResponseStream.observing` and `discard()` let a layer hear of every end, including a stream that is never run
+  (a `HEAD`, a bodyless status, a status that cannot be sent, a client that left first).
+- **Server-sent events.** `Response.eventStream` and `EventWriter.send(data:event:id:retry:)` / `sendComment`: data
+  is split at every break (CR, LF, CR LF); a name, id or comment with a line break (or a NUL in a name or id) is
+  refused before anything is written, so a value cannot start another field or event.
+
+### Fixed
+- The timer trigger's cancellation: cancelling before the next wait finishes the stream, cancelling during it throws
+  `CancellationError`. The 0.3.0 test and doc comment said it always threw, and the test was flaky.
+
+### Notes
+- **A test that passed for the wrong reason, and the fix.** SwiftTLSKit adds its TLS handler at the front of the
+  pipeline, so a PROXY handler added before it ended up behind it, and the first version of the "header before TLS"
+  test passed because the test client's TLS (also at the front) encrypted the header. The handler is now added after
+  TLS so that it is first, and the test clients write the header unencrypted.
+- **Tests.** 167 in the core (from 104) and 241 in the transport (from 151).
+- **Hand mutation.** Roughly 400 mutants over the eight items, each run alone; survivors were missing cases (added),
+  redundant code (removed) or unobservable. Two drivers had defects found and fixed along the way: one left mutants in
+  the tree (caught by a failing run, reversed by hand, and the results discarded), and one counted crashes as
+  survivors.
+
 ## [0.3.0] - 2026-10-29
 
 Request id, access log and a rate limiter in the core; reload triggers in the transport; and a fix for a latent
@@ -175,7 +240,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jpurnell/SwiftHTTPService/releases/tag/v0.1.0
