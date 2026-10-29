@@ -70,8 +70,13 @@ public struct Request: Sendable {
     public let headers: HTTPFields
     /// The body, already within the transport's limit.
     public let body: Data
-    /// The peer's address as the transport saw it, if it knows.
+    /// The client's address, if the transport knows it. Behind a trusted proxy this is the client the proxy
+    /// reported (see ``ServiceConfiguration/Forwarding``); otherwise it is the socket's peer. Rate limits and
+    /// access logs key on this.
     public let remoteAddress: String?
+    /// The address of the socket's peer, whatever a proxy said. The same as ``remoteAddress`` unless the request
+    /// came through a trusted proxy.
+    public let peerAddress: String?
     /// The version of HTTP that carried the request. HTTP/1.1 for a request built without one.
     public let httpVersion: HTTPProtocolVersion
     /// Values the router captured from `{name}` segments.
@@ -84,7 +89,7 @@ public struct Request: Sendable {
     /// - Throws: ``RequestError/malformedTarget``.
     public init(
         method: HTTPRequest.Method, target: String, headers: HTTPFields, body: Data, remoteAddress: String? = nil,
-        httpVersion: HTTPProtocolVersion = .http1_1
+        httpVersion: HTTPProtocolVersion = .http1_1, peerAddress: String? = nil
     ) throws {
         let parts = try Self.parse(target)
         self.method = method
@@ -95,6 +100,7 @@ public struct Request: Sendable {
         self.headers = headers
         self.body = body
         self.remoteAddress = remoteAddress
+        self.peerAddress = peerAddress ?? remoteAddress
         self.httpVersion = httpVersion
         self.pathParameters = [:]
         self.context = Context()

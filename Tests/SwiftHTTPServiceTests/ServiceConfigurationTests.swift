@@ -27,6 +27,28 @@ struct ServiceConfigurationTests {
         #expect(limits.maximumConcurrentStreams == 100)     // the RFC 9113 suggested minimum (design H3)
         #expect(configuration.protocols == .http1AndHTTP2)  // design H2
         #expect(configuration.connections == .keepAlive)    // connections are reused unless asked otherwise
+        #expect(configuration.trustedProxies.isEmpty)       // nothing is trusted unless named
+        #expect(configuration.forwarding == .none)
+    }
+
+    @Test("Trusted proxies and a forwarding mode are kept as given, and the blocks are parsed")
+    func proxiesSet() throws {
+        let configuration = try ServiceConfiguration(trustedProxies: ["10.0.0.0/8", "::1"], forwarding: .xForwardedFor)
+        #expect(configuration.forwarding == .xForwardedFor)
+        #expect(configuration.trustedProxies.map(\.description) == ["10.0.0.0/8", "::1/128"])
+        #expect(try ServiceConfiguration(trustedProxies: ["10.0.0.1"]).forwarding == .none)   // a list alone trusts nothing yet
+    }
+
+    @Test("Forwarding with nobody trusted is refused: it would believe no one")
+    func forwardingNeedsProxies() {
+        #expect(throws: ConfigurationError(field: "trustedProxies", reason: .empty)) { _ = try ServiceConfiguration(forwarding: .xForwardedFor) }
+        #expect(throws: ConfigurationError(field: "trustedProxies", reason: .empty)) { _ = try ServiceConfiguration(forwarding: .proxyProtocol) }
+    }
+
+    @Test("A malformed block is refused naming the field, not the text, and so is the block of every address")
+    func badProxies() {
+        #expect(throws: ConfigurationError(field: "trustedProxies", reason: .malformed)) { _ = try ServiceConfiguration(trustedProxies: ["10.0.0.0/8", "nope"]) }
+        #expect(throws: ConfigurationError(field: "trustedProxies", reason: .malformed)) { _ = try ServiceConfiguration(trustedProxies: ["0.0.0.0/0"], forwarding: .xForwardedFor) }
     }
 
     @Test("The connection mode can be set to close after each response, and nothing else is changed by it")
