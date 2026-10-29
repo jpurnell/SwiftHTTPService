@@ -29,7 +29,7 @@ struct ReloadTriggerTests {
 
     // MARK: The timer
 
-    @Test("A timer trigger yields once per interval, and ends with a CancellationError when the task that waits on it is cancelled")
+    @Test("A timer trigger yields once per interval, and ends, finishing or with a CancellationError, when the task that waits on it is cancelled")
     func timerYields() async throws {
         let stream = try TLSReloadTrigger.every(.milliseconds(30))
         let count = NIOLockedValueBox(0)
@@ -45,7 +45,8 @@ struct ReloadTriggerTests {
         // 400 ms of 30 ms intervals is about 13; the bounds leave room for a busy machine and still tell
         // "once per interval" from "never" and from "in a tight loop".
         #expect((3...20).contains(seen), "saw \(seen)")
-        #expect(ending is CancellationError, "ended with \(String(describing: ending))")
+        // Cancelling before the next wait begins finishes the stream; cancelling during the wait throws. Both are the end.
+        #expect(ending == nil || ending is CancellationError, "ended with \(String(describing: ending))")
     }
 
     struct Bad: Sendable, CustomTestStringConvertible {
@@ -219,7 +220,8 @@ struct ReloadTriggerTests {
         #expect(try await outcomes.wait(for: 3))
         #expect(outcomes.value.allSatisfy { kind($0) == "unchanged" })
         loop.cancel()
-        #expect(await loop.value is CancellationError)
+        let ending = await loop.value                              // returns at all only because cancelling ended the loop
+        #expect(ending == nil || ending is CancellationError, "ended with \(String(describing: ending))")
         await running.server.shutdown()
     }
 

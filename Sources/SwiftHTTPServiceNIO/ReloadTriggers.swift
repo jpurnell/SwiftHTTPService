@@ -35,8 +35,8 @@ public enum TLSReloadTrigger {
 
     /// One element for each `interval`, for a periodic check.
     ///
-    /// The stream ends with a `CancellationError` when the task iterating it is cancelled, as Swift's
-    /// cancellation convention has it. It is pull-based: each element is produced when the consumer asks for
+    /// The stream ends when the task iterating it is cancelled: either by finishing, or by throwing a
+    /// `CancellationError`, depending on whether the cancel arrives before the next wait begins or during it. It is pull-based: each element is produced when the consumer asks for
     /// the next, so no task runs in the background to clean up, and a consumer slower than the interval gets the
     /// next element when it asks, not a queue of the ones it missed.
     ///
@@ -86,8 +86,8 @@ extension HTTPServer {
         }
     }
 
-    /// The same for a trigger stream that can throw, which is what ``TLSReloadTrigger/every(_:)`` is: it ends
-    /// by throwing `CancellationError` when the task running this is cancelled.
+    /// The same for a trigger stream that can throw, which is what ``TLSReloadTrigger/every(_:)`` is: when the task
+    /// running this is cancelled it returns, or throws `CancellationError`, depending on when the cancel arrives.
     ///
     /// - Throws: What the stream throws.
     public func reloadTLS(
