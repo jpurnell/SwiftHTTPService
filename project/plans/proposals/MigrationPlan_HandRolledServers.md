@@ -103,10 +103,22 @@ Replacing the transport entirely is a decision for after the kit can stream, and
 - Run any of these servers or measure their behaviour. Keep-alive tolerance, in particular, is untested.
 - Decide the streaming, wildcard and form-body questions in §3; they need the owner.
 
-## 6. Decisions needed
+## 6. Decisions (owner, 2026-10-29)
 
-- **D1:** the period `ijs-dashboard-server` must run cleanly before anything migrates.
-- **D2:** streaming responses: build them into the kit, or keep MCP on its own transport.
-- **D3:** tail wildcards: explicit routes, or one deliberate capture segment.
-- **D4:** FleetWatch: migrate at all, given it works today. The case for it is one listener instead of three
-  copies and the limits the kit adds; the case against is risk to a live service for no new feature.
+- **D1: two gates (option C), with FleetWatch and VaultMCP moved sooner.** The owner: those two "will be an actual
+  test". Applied as: *Gate A*, SwiftPushHub, after `ijs-dashboard-server` has run a tagged 0.4.0 for about 3 days
+  with no transport fault. *Gate B*, FleetWatch and VaultMCP: they start running **beside** the old server on
+  another port as soon as Gate A passes (the parallel run is the test), and cut over after 7 clean days that
+  include one TLS reload and one restart. 7 days is my reading of "sooner" than the 14 I proposed; the owner may
+  change the number. A *fault* is a crash, a hang, a transport-made `4xx` for traffic that should have been served,
+  memory or descriptor growth, a failed reload, or a shutdown that overran its grace. The access log (0.3.0) is how
+  it is measured. The soaked code must be the code that migrates: 0.4.0, tagged, not the by-path build now running.
+- **D2: A, build streaming responses into the kit.** "We should have all of this done." The consequence is that
+  SwiftMCPServer's transport can eventually move too (§4.4's "not wholesale" is revisited after streaming ships).
+- **D3: A, explicit routes, no tail wildcard.** Evidence: all four FleetWatch "wildcards" are single-segment
+  parameters (`/enroll/{code}`, `/enroll/{code}/qr.png`, `/legacy/{name}`, `/v1/machines/{id}/request-report`).
+- **D4: A, migrate FleetWatch fully.** The owner: the kit should "cover all of our needs without having to maintain
+  multiple systems". The listener and the 53 route cases both move. That makes the §3 gaps requirements, not
+  options: form bodies, asset helpers, redirects and cookies, per-route limits, and a close-after-response mode.
+  All of them, with streaming, the request's HTTP version, trusted proxy, and a transport refusal hook, are 0.4.0:
+  `DesignProposal_0.4.0.md`.

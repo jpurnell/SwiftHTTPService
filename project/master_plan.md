@@ -139,6 +139,9 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 - [ ] 0.1.0: SwiftTLSKit by URL, then the tag, then `ijs-dashboard-server` names it by version
 
 ### Next release: 0.4.0, before migration begins
+Scope widened by the owner's migration decisions (2026-10-29: D2 streaming, D4 full FleetWatch migration): see
+`DesignProposal_0.4.0.md`, which is also the build order. The list below is the consumer's findings; the proposal
+adds the gaps D4 turns into requirements (forms, assets, redirects and cookies, close-after-response mode).
 Candidates from a consumer's findings (a worker building on the kit, relayed by the owner 2026-10-29). The owner's
 decision (2026-10-29): these go into a 0.3.1 or a 0.4.0 before migration starts. They add public API, and before 1.0
 this package signals a source break with the minor version, so the working assumption is 0.4.0. Each wants a design
@@ -160,7 +163,7 @@ note before code.
 
 ---
 
-**Last Updated:** 2026-10-29 (a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-10-29 (migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)
