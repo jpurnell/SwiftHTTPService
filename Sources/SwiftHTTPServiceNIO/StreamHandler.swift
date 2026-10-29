@@ -42,6 +42,9 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     private let server: ServerContext
     private var state: State = .idle
     private var inFlight: Task<Response, any Error>?
+    private var streamSession: StreamSession?
+    private var streamTask: Task<Void, any Error>?
+    private var streamTimer: Scheduled<Void>?
     private let liveness = ChannelLiveness()
     private var bodyTimer: Scheduled<Void>?
 
@@ -231,7 +234,12 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         inFlight = nil
         guard context.channel.isActive else { return }
         switch ResponseRules.outcome(of: result) {
-        case .success(let response): write(response, isHead: isHead, requestEnded: true, context: context)
+        case .success(let response):
+            if let stream = response.stream {
+                writeStreaming(response, stream: stream, isHead: isHead, context: context)
+            } else {
+                write(response, isHead: isHead, requestEnded: true, context: context)
+            }
         case .failure(let refusal): refuse(refusal, requestEnded: true, context: context)
         }
     }
@@ -275,6 +283,83 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         }
     }
 
+    // MARK: Streaming
+
+    /// Sends the headers of a streaming response, then runs its producer, sending each write as `DATA`.
+    ///
+    /// A producer that ends cleanly ends the stream with `END_STREAM`. One that fails, or is cut off by a limit,
+    /// resets the stream and leaves the connection and its other streams alone: `INTERNAL_ERROR` if the producer
+    /// itself failed, `CANCEL` if a limit or the peer ended it. Flow control paces the producer: a write completes
+    /// when the connection has taken the frame, which it does as the peer gives its window back.
+    private func writeStreaming(_ response: Response, stream: ResponseStream, isHead: Bool, context: ChannelHandlerContext) {
+        let prepared = ResponseRules.prepare(response)
+        guard prepared.hasBody else {
+            // A status that has no body (204, 304) has nothing to stream: it is an ordinary bodyless response.
+            write(Response(status: response.status, headers: response.headers), isHead: isHead, requestEnded: true, context: context)
+            return
+        }
+        cancelBodyTimer()
+        var block = HPACKHeaders()
+        block.add(name: ":status", value: String(prepared.code))
+        for field in prepared.fields { block.add(name: field.name.rawName.lowercased(), value: field.value) }
+        block.add(name: "date", value: HTTPDate.string(for: Date()))
+        guard !isHead else {
+            state = .done
+            context.writeAndFlush(wrapOutboundOut(.headers(.init(headers: block, endStream: true))), promise: nil)
+            return
+        }
+        context.writeAndFlush(wrapOutboundOut(.headers(.init(headers: block, endStream: false))), promise: nil)
+
+        let channel = context.channel
+        let session = StreamSession(channel: channel, limits: server.configuration.limits) { buffer in
+            channel.writeAndFlush(HTTP2Frame.FramePayload.data(.init(data: .byteBuffer(buffer), endStream: false)))
+        }
+        streamSession = session
+        let task = Task { try await stream.produce(ResponseWriter { try await session.write($0) }) }
+        streamTask = task
+        let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
+        let loopSelf = NIOLoopBound(self, eventLoop: context.eventLoop)
+        let liveness = self.liveness
+        let eventLoop = context.eventLoop
+        // The stream's whole life is bounded: past the duration it is cut off, whether the producer is writing or idle.
+        streamTimer = context.eventLoop.scheduleTask(in: server.configuration.limits.maximumStreamDuration.timeAmount) {
+            session.end(.durationLimit)
+            task.cancel()
+            loopContext.value.close(promise: nil)
+        }
+        Task {
+            var producerFailed = false
+            if case .failure(let failure) = await task.result {
+                producerFailed = !(failure is StreamError) && !(failure is CancellationError)
+                session.end((failure as? StreamError) ?? .closed)
+            }
+            // The stream may have closed, and the loop stopped with it, while the producer ran.
+            guard liveness.isOpen else { return }
+            let failed = producerFailed
+            eventLoop.execute {
+                loopSelf.value.streamEnded(clean: session.reason == nil, producerFailed: failed, context: loopContext.value)
+            }
+        }
+    }
+
+    /// The producer has returned. A clean end finishes the stream; anything else resets it.
+    private func streamEnded(clean: Bool, producerFailed: Bool, context: ChannelHandlerContext) {
+        streamTimer?.cancel()
+        streamTimer = nil
+        streamTask = nil
+        streamSession?.end(.closed)                      // nothing more may be written to this stream
+        streamSession = nil
+        state = .done
+        guard context.channel.isActive else { return }
+        if clean {
+            context.writeAndFlush(wrapOutboundOut(.data(.init(data: .byteBuffer(ByteBuffer()), endStream: true))), promise: nil)
+        } else if producerFailed {
+            context.writeAndFlush(wrapOutboundOut(.rstStream(.internalError)), promise: nil)
+        } else {
+            context.close(promise: nil)                  // a limit, or a peer that left: the stream is cancelled
+        }
+    }
+
     private func reset(_ code: NIOHTTP2.HTTP2ErrorCode, context: ChannelHandlerContext) {
         state = .done
         context.writeAndFlush(wrapOutboundOut(.rstStream(code)), promise: nil)
@@ -290,6 +375,12 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
 
     func channelInactive(context: ChannelHandlerContext) {
         liveness.close()
+        streamTimer?.cancel()
+        streamTimer = nil
+        streamSession?.end(.closed)
+        streamTask?.cancel()
+        streamTask = nil
+        streamSession = nil
         cancelBodyTimer()
         inFlight?.cancel()
         inFlight = nil

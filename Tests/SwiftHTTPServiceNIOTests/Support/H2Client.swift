@@ -192,6 +192,56 @@ struct H2Client: Sendable {
         return collector.state.withLockedValue { $0 }
     }
 
+    /// A stream the test watches as it arrives, rather than waiting for it to end.
+    struct Watched: Sendable {
+        let channel: any Channel
+        let collector: StreamCollector
+
+        /// What has arrived so far.
+        var response: H2Response { collector.state.withLockedValue { $0 } }
+
+        /// Waits until `condition` holds of what has arrived, or the timeout.
+        func wait(timeout: Duration = .seconds(5), until condition: (H2Response) -> Bool) async throws -> Bool {
+            let deadline = ContinuousClock.now + timeout
+            while ContinuousClock.now < deadline {
+                if condition(response) { return true }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            return condition(response)
+        }
+
+        /// Resets the stream, as a client that has lost interest does.
+        func reset() async {
+            await withCheckedContinuation { continuation in
+                channel.close().whenComplete { _ in continuation.resume() }
+            }
+        }
+    }
+
+    /// Sends a request and returns at once with a handle on its stream.
+    ///
+    /// - Parameter paused: The test does not read the stream's data, so its flow-control window is never given back.
+    func open(
+        _ method: String, _ path: String, headers: [(String, String)] = [], paused: Bool = false
+    ) async throws -> Watched {
+        let collector = StreamCollector()
+        let promise = channel.eventLoop.makePromise(of: Channel.self)
+        multiplexer.createStreamChannel(promise: promise) { stream in
+            stream.pipeline.addHandler(collector).flatMap {
+                paused ? stream.setOption(ChannelOptions.autoRead, value: false) : stream.eventLoop.makeSucceededVoidFuture()
+            }
+        }
+        let stream = try await promise.futureResult.get()
+        var block = HPACKHeaders()
+        block.add(name: ":method", value: method)
+        block.add(name: ":scheme", value: "https")
+        block.add(name: ":path", value: path)
+        block.add(name: ":authority", value: "localhost")
+        for (name, value) in headers { block.add(name: name, value: value) }
+        try await stream.writeAndFlush(HTTP2Frame.FramePayload.headers(.init(headers: block, endStream: true))).get()
+        return Watched(channel: stream, collector: collector)
+    }
+
     /// Waits for the connection to be closed by the server.
     func waitUntilClosed(timeout: Duration = .seconds(5)) async throws -> Bool {
         let deadline = ContinuousClock.now + timeout
