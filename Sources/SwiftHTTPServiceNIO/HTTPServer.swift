@@ -92,6 +92,24 @@ public final class HTTPServer: Sendable {
         self.context = ServerContext(configuration: configuration, handler: handler, refusals: refusals)
     }
 
+    /// Creates a server for a ``Router``, wiring its per-route body bounds to the transport.
+    ///
+    /// The router is wrapped in `middleware`, the first outermost, and each route's own bound
+    /// (``Router/add(_:_:maximumBodyBytes:middleware:_:)``) replaces the server's global one for that route,
+    /// checked after the head and before any body is read. Prefer this to passing `router.handler`, which would
+    /// serve the routes but leave their bounds unknown to the transport.
+    ///
+    /// - Parameters:
+    ///   - configuration: The validated configuration.
+    ///   - router: The routes.
+    ///   - middleware: Layers around the whole router, the first outermost.
+    ///   - refusals: What to do about the transport's own refusals. By default nothing.
+    public init(configuration: ServiceConfiguration, router: Router, middleware: [Middleware] = [], refusals: RefusalHooks = RefusalHooks()) {
+        self.context = ServerContext(
+            configuration: configuration, handler: wrap(router.handler, with: middleware), refusals: refusals,
+            routeBodyLimit: { method, target in router.maximumBodyBytes(for: method, target: target) })
+    }
+
     /// Opens the listening socket and starts serving.
     ///
     /// - Returns: The address actually bound (useful with port zero).

@@ -54,12 +54,16 @@ same handlers are serialised after them.
   public enum of the kinds, with no peer-supplied value in it. Neither closure may throw or block.
 
 ## 5. Per-route limits
-- The body bound is known only after the route is, but the transport checks it before it reads a body. So the
-  transport takes a `@Sendable (method, path) -> Int?` (`ServiceConfiguration.bodyLimit`), consulted after the
-  head, before the body; `Router.bodyLimit` supplies one from `add(..., maximumBodyBytes:)`. Never above the
-  global bound's ceiling (64 MiB) and never clamped silently: a value out of range is a registration error.
-- Per-route middleware: `Router.add(_:_:middleware:_:)`, applied inside the global ones, so a login route takes a
-  tighter `rateLimit` than the rest.
+- The body bound is known only after the route is, but the transport checks it before it reads a body. So
+  `Router.add(_:_:maximumBodyBytes:middleware:_:)` (and `get`, `post`, ...) take a per-route bound and per-route
+  middleware, both defaulted, and `Router.maximumBodyBytes(for:target:)` answers "what is the bound for this method
+  and target?" from the head alone, by the same rule that serves the request (the shared `winning` function), so it
+  can never name a different route. `HTTPServer(configuration:router:middleware:refusals:)` wires the router to the
+  transport; the transport asks after the head, before any body, and the answer replaces the global bound, lower or
+  higher. A bound outside 0 to 64 MiB is a registration error naming the pattern, never clamped, and a refused
+  registration changes nothing. A path with no route, or a route with no override, takes the global bound.
+- Per-route middleware runs inside the layers wrapped around the whole router, the first listed outermost, so a
+  login route takes a tighter `rateLimit` than the rest.
 
 ## 6. Close-after-response mode
 - `ServiceConfiguration.connections: .keepAlive | .closeAfterResponse`. For clients that cannot reuse a

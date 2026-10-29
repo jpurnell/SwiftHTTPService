@@ -33,6 +33,8 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         var keepAlive: Bool
         var isHead: Bool
         var version: HTTPProtocolVersion
+        /// This request's body bound: its route's, or the server's. Fixed when the head arrived.
+        var bodyLimit: Int
         var body: ByteBuffer
         /// The Content-Length, or nil for a chunked body or none.
         var declaredLength: Int?
@@ -73,8 +75,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
             closeAfterResponse = true
             context.triggerUserOutboundEvent(GuardSignal.discard, promise: nil)
         case (.body(var chunk), .receiving(var receiving)):
-            let limit = server.configuration.limits.maximumBodyBytes
-            guard RequestRules.bodyFits(received: receiving.body.readableBytes, incoming: chunk.readableBytes, limit: limit) else {
+            guard RequestRules.bodyFits(received: receiving.body.readableBytes, incoming: chunk.readableBytes, limit: receiving.bodyLimit) else {
                 cancelBodyTimer()
                 refuse(.bodyTooLarge, context: context)
                 return
@@ -105,7 +106,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
             refuse(.malformedTarget, context: context)
             return
         }
-        let limit = server.configuration.limits.maximumBodyBytes
+        let limit = server.bodyLimit(method: validated.method, target: head.uri)
         if let length = validated.declaredLength, !RequestRules.declaredLengthFits(length, limit: limit) {
             refuse(.bodyTooLarge, context: context)
             return
@@ -116,7 +117,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         }
         state = .receiving(Receiving(
             method: validated.method, target: head.uri, fields: validated.fields, keepAlive: head.isKeepAlive,
-            isHead: head.method == .HEAD, version: head.version.minor == 0 ? .http1_0 : .http1_1, body: context.channel.allocator.buffer(capacity: 0),
+            isHead: head.method == .HEAD, version: head.version.minor == 0 ? .http1_0 : .http1_1, bodyLimit: limit, body: context.channel.allocator.buffer(capacity: 0),
             declaredLength: validated.declaredLength, expectsBody: validated.expectsBody))
         if validated.expectsBody { armBodyTimer(context: context) }
     }

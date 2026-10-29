@@ -13,6 +13,8 @@ public enum RouterError: Error, Equatable, Sendable {
     case invalidPattern(String)
     /// The method and shape are already registered (parameter names do not make a shape different).
     case duplicate(method: String, pattern: String)
+    /// The route's body bound is outside 0 to 64 MiB. Names the pattern and never the number.
+    case invalidBodyLimit(String)
 }
 
 /// Maps a method and a path to a handler.
@@ -53,28 +55,53 @@ public struct Router: Sendable {
 
     /// Registers a handler.
     ///
-    /// - Throws: ``RouterError``.
-    public mutating func add(_ method: HTTPRequest.Method, _ pattern: String, _ handler: @escaping Handler) throws(RouterError) {
+    /// - Parameters:
+    ///   - method: The method.
+    ///   - pattern: The path pattern.
+    ///   - maximumBodyBytes: A body bound for this route alone, in bytes, 0 to 64 MiB, replacing the server's
+    ///     global bound whether it is lower or higher. The transport asks for it (``maximumBodyBytes(for:target:)``)
+    ///     after the head and before it reads any body, so a body past it is refused unread. Nil means the global
+    ///     bound. A route that does not exist, or lacks the method, has no override.
+    ///   - middleware: Layers for this route only, the first outermost, inside any layers wrapped around the whole
+    ///     router. A login route takes a tighter `rateLimit` than the rest this way.
+    ///   - handler: The handler.
+    /// - Throws: ``RouterError``. A refused registration changes nothing.
+    public mutating func add(
+        _ method: HTTPRequest.Method, _ pattern: String, maximumBodyBytes: Int? = nil, middleware: [Middleware] = [],
+        _ handler: @escaping Handler
+    ) throws(RouterError) {
         let segments = try Self.parse(pattern)
+        if let maximumBodyBytes, !(0...67_108_864).contains(maximumBodyBytes) { throw .invalidBodyLimit(pattern) }
         let names = segments.compactMap { segment -> String? in
             if case .parameter(let name) = segment { return name }
             return nil
         }
-        guard root.insert(segments[...], method: method, route: Route(handler: handler, names: names)) else {
+        let route = Route(handler: wrap(handler, with: middleware), names: names, maximumBodyBytes: maximumBodyBytes)
+        guard root.insert(segments[...], method: method, route: route) else {
             throw .duplicate(method: method.rawValue, pattern: pattern)
         }
     }
 
     /// Registers a `GET` handler.
-    public mutating func get(_ pattern: String, _ handler: @escaping Handler) throws(RouterError) { try add(.get, pattern, handler) }
+    public mutating func get(
+        _ pattern: String, maximumBodyBytes: Int? = nil, middleware: [Middleware] = [], _ handler: @escaping Handler
+    ) throws(RouterError) { try add(.get, pattern, maximumBodyBytes: maximumBodyBytes, middleware: middleware, handler) }
     /// Registers a `POST` handler.
-    public mutating func post(_ pattern: String, _ handler: @escaping Handler) throws(RouterError) { try add(.post, pattern, handler) }
+    public mutating func post(
+        _ pattern: String, maximumBodyBytes: Int? = nil, middleware: [Middleware] = [], _ handler: @escaping Handler
+    ) throws(RouterError) { try add(.post, pattern, maximumBodyBytes: maximumBodyBytes, middleware: middleware, handler) }
     /// Registers a `PUT` handler.
-    public mutating func put(_ pattern: String, _ handler: @escaping Handler) throws(RouterError) { try add(.put, pattern, handler) }
+    public mutating func put(
+        _ pattern: String, maximumBodyBytes: Int? = nil, middleware: [Middleware] = [], _ handler: @escaping Handler
+    ) throws(RouterError) { try add(.put, pattern, maximumBodyBytes: maximumBodyBytes, middleware: middleware, handler) }
     /// Registers a `PATCH` handler.
-    public mutating func patch(_ pattern: String, _ handler: @escaping Handler) throws(RouterError) { try add(.patch, pattern, handler) }
+    public mutating func patch(
+        _ pattern: String, maximumBodyBytes: Int? = nil, middleware: [Middleware] = [], _ handler: @escaping Handler
+    ) throws(RouterError) { try add(.patch, pattern, maximumBodyBytes: maximumBodyBytes, middleware: middleware, handler) }
     /// Registers a `DELETE` handler.
-    public mutating func delete(_ pattern: String, _ handler: @escaping Handler) throws(RouterError) { try add(.delete, pattern, handler) }
+    public mutating func delete(
+        _ pattern: String, maximumBodyBytes: Int? = nil, middleware: [Middleware] = [], _ handler: @escaping Handler
+    ) throws(RouterError) { try add(.delete, pattern, maximumBodyBytes: maximumBodyBytes, middleware: middleware, handler) }
 
     // MARK: Serving
 
@@ -84,18 +111,42 @@ public struct Router: Sendable {
         return { request in try await router.route(request) }
     }
 
+    /// The route that serves a method among the paths that fit, most specific first: the method's own handler, or
+    /// for `HEAD` the `GET` handler. The one rule, used both to serve and to look up a limit.
+    private static func winning(
+        among matches: [(routes: [HTTPRequest.Method: Route], captured: [String])], for method: HTTPRequest.Method
+    ) -> (route: Route, captured: [String])? {
+        for match in matches {
+            if let route = match.routes[method] ?? (method == .head ? match.routes[.get] : nil) {
+                return (route, match.captured)
+            }
+        }
+        return nil
+    }
+
+    /// The body bound registered for the route that would serve `method` and `target`, or nil if there is none
+    /// (no such route, no override on it, or a target that does not parse).
+    ///
+    /// Asked by the transport after the head and before any body is read, so a route can take a bound different
+    /// from the server's. It follows the same rule as serving, so it can never name a different route.
+    public func maximumBodyBytes(for method: HTTPRequest.Method, target: String) -> Int? {
+        let built = Result { try Request(method: method, target: target, headers: HTTPFields(), body: Data()) }
+        guard case .success(let probe) = built else { return nil }
+        var matches: [(routes: [HTTPRequest.Method: Route], captured: [String])] = []
+        root.collect(probe.pathSegments[...], captured: [], into: &matches)
+        return Self.winning(among: matches, for: method)?.route.maximumBodyBytes
+    }
+
     /// Finds the handler for a request and runs it.
     public func route(_ request: Request) async throws -> Response {
         var matches: [(routes: [HTTPRequest.Method: Route], captured: [String])] = []
         root.collect(request.pathSegments[...], captured: [], into: &matches)
         guard !matches.isEmpty else { return try await notFound(request) }
 
-        for match in matches {
-            let route = match.routes[request.method] ?? (request.method == .head ? match.routes[.get] : nil)
-            guard let route else { continue }
+        if let found = Self.winning(among: matches, for: request.method) {
             var routed = request
-            routed.pathParameters = Dictionary(uniqueKeysWithValues: zip(route.names, match.captured))
-            return try await route.handler(routed)
+            routed.pathParameters = Dictionary(uniqueKeysWithValues: zip(found.route.names, found.captured))
+            return try await found.route.handler(routed)
         }
 
         var allowed = Set(matches.flatMap { $0.routes.keys.map(\.rawValue) })
@@ -114,6 +165,7 @@ public struct Router: Sendable {
     private struct Route: Sendable {
         let handler: Handler
         let names: [String]
+        let maximumBodyBytes: Int?
     }
 
     /// One position in a path. Literals are looked up by name; a parameter, if any, is the single other child.
