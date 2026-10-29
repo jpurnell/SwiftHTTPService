@@ -138,11 +138,26 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 - [ ] 0.1.0: SwiftTLSKit by URL, then the tag, then `ijs-dashboard-server` names it by version
 
 ### Future
+Candidates from a consumer's findings (a worker building on the kit, relayed by the owner 2026-10-29). Proposals,
+not commitments; each wants a design note before code.
+- [ ] `Request` has no HTTP version, so a handler cannot tell which one carried it. The design said a handler should
+  not need to, and it may still not; the question is what a consumer needed it for.
+- [ ] Trusted proxy and the PROXY protocol. `remoteAddress` is the socket address only, so behind a proxy every
+  client is the proxy: the rate limiter's default key (documented), and the access log's `remote`. Needs a decision
+  on whom to trust, which is a security decision before it is a feature.
+- [ ] A transport refusal hook: the transport's own refusals (`400`, `408`, `413`, `431`) are fixed bodies, and a
+  server that wants them in its own shape or counted has no way in. Also the means to make them indistinguishable
+  from the server's other refusals, as the `404`/`405` replacement already allows.
+- [ ] Response streaming. This is migration decision D2.
+- [ ] Per-route limits (a larger body bound for one upload route, a tighter rate for a login route).
+- Already answered by 0.3.0: the shutdown error (fixed), and an unlogged failed reload (`reloadTLS(onEach:report:)`
+  hands the caller every outcome, `.failed` included, with `suggestedLogLevel`).
+
 - ~~HTTP/2, only if a consumer needs it.~~ Shipped ahead of any consumer (2026-10-28); see Current Status.
 
 ---
 
-**Last Updated:** 2026-10-29 (v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-10-29 (a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)
