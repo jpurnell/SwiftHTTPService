@@ -188,11 +188,14 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     // MARK: Running the handler
 
     private func dispatch(_ receiving: Receiving, context: ChannelHandlerContext) {
+        let peer = context.remoteAddress?.ipAddress
         let built = Result {
             try Request(
                 method: receiving.method, target: receiving.target, headers: receiving.fields,
-                body: Data(receiving.body.readableBytesView), remoteAddress: context.remoteAddress?.ipAddress,
-                httpVersion: receiving.version)
+                body: Data(receiving.body.readableBytesView),
+                remoteAddress: ClientAddress.resolve(
+                    peer: peer, proxied: nil, forwardedFor: receiving.fields.forwardedForValues, configuration: server.configuration),
+                httpVersion: receiving.version, peerAddress: peer)
         }
         guard case .success(let request) = built else {
             refuse(.malformedTarget, context: context)

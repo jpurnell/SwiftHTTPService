@@ -119,6 +119,23 @@ public struct ServiceConfiguration: Sendable, Equatable {
     public let protocols: Protocols
     /// Whether a connection is kept for the next request.
     public let connections: ConnectionReuse
+    /// The proxies whose word about a client is believed: nobody, unless named.
+    public let trustedProxies: [NetworkBlock]
+    /// How a trusted proxy tells the server who the client is.
+    public let forwarding: Forwarding
+
+    /// How a proxy in front of the server says who the client is.
+    ///
+    /// Forwarded information is believed only if the socket's peer is on ``trustedProxies``; from anyone else it is
+    /// ignored (or, for the PROXY protocol, refused), because a client can write any header it likes.
+    public enum Forwarding: Sendable, Equatable {
+        /// The client is the socket's peer. The default.
+        case none
+        /// The `X-Forwarded-For` header, read from the right: the first address that is not itself a trusted proxy.
+        case xForwardedFor
+        /// The PROXY protocol (version 1 or 2): a header the proxy sends before anything else on the connection.
+        case proxyProtocol
+    }
 
     /// Whether the server keeps a connection open for the next request.
     ///
@@ -144,7 +161,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
     ///
     /// - Throws: ``ConfigurationError`` naming the first field that is refused.
     public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits(), protocols: Protocols = .http1AndHTTP2,
-        connections: ConnectionReuse = .keepAlive
+        connections: ConnectionReuse = .keepAlive, trustedProxies: [String] = [], forwarding: Forwarding = .none
     ) throws(ConfigurationError) {
         try Self.validate(host: host)
         if let tls {
@@ -152,12 +169,18 @@ public struct ServiceConfiguration: Sendable, Equatable {
             try Self.validate(path: tls.privateKeyPath, field: "tls.privateKeyPath")
         }
         try Self.validate(limits)
+        var blocks: [NetworkBlock] = []
+        for text in trustedProxies { blocks.append(try NetworkBlock(text)) }
+        // Forwarding with nobody trusted would believe no one, which is a mistake to find when the server starts.
+        if forwarding != .none, blocks.isEmpty { throw ConfigurationError(field: "trustedProxies", reason: .empty) }
         self.host = host
         self.port = port
         self.tls = tls
         self.limits = limits
         self.protocols = protocols
         self.connections = connections
+        self.trustedProxies = blocks
+        self.forwarding = forwarding
     }
 
     // MARK: Validation
