@@ -86,8 +86,10 @@ public final class HTTPServer: Sendable {
     /// - Parameters:
     ///   - configuration: The validated configuration.
     ///   - handler: Called once per request, after the request has been read and validated.
-    public init(configuration: ServiceConfiguration, handler: @escaping Handler) {
-        self.context = ServerContext(configuration: configuration, handler: handler)
+    ///   - refusals: What to do about the transport's own refusals: give them the server's body, and count them.
+    ///     By default nothing, and the fixed bodies stand.
+    public init(configuration: ServiceConfiguration, handler: @escaping Handler, refusals: RefusalHooks = RefusalHooks()) {
+        self.context = ServerContext(configuration: configuration, handler: handler, refusals: refusals)
     }
 
     /// Opens the listening socket and starts serving.
