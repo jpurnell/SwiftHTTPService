@@ -54,6 +54,9 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private let liveness = ChannelLiveness()
     private var bodyTimer: Scheduled<Void>?
     private var inFlight: Task<Response, any Error>?
+    private var streamSession: StreamSession?
+    private var streamTask: Task<Void, any Error>?
+    private var streamTimer: Scheduled<Void>?
 
     private let identity: ConnectionIdentity
 
@@ -212,26 +215,38 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
         let loopSelf = NIOLoopBound(self, eventLoop: context.eventLoop)
         let isHead = receiving.isHead
+        let version = receiving.version
         let eventLoop = context.eventLoop
         let liveness = self.liveness
         Task {
             let result = await task.result
-            // The channel may have closed, and the loop stopped with it, while the handler ran.
-            guard liveness.isOpen else { return }
+            // The channel may have closed, and the loop stopped with it, while the handler ran. A stream it
+            // returned will never run, and whoever is waiting to hear how it ended is told.
+            guard liveness.isOpen else {
+                if case .success(let response) = result { response.stream?.discard() }
+                return
+            }
             // Back onto the connection's loop before touching the context or the handler.
             eventLoop.execute {
-                loopSelf.value.completed(result, isHead: isHead, context: loopContext.value)
+                loopSelf.value.completed(result, isHead: isHead, version: version, context: loopContext.value)
             }
         }
     }
 
-    private func completed(_ result: Result<Response, any Error>, isHead: Bool, context: ChannelHandlerContext) {
+    private func completed(
+        _ result: Result<Response, any Error>, isHead: Bool, version: HTTPProtocolVersion, context: ChannelHandlerContext
+    ) {
         inFlight = nil
         guard context.channel.isActive else { return }
         switch ResponseRules.outcome(of: result) {
         case .success(let response):
-            write(response, isHead: isHead, close: closeAfterResponse, context: context)
+            if let stream = response.stream {
+                writeStreaming(response, stream: stream, isHead: isHead, version: version, context: context)
+            } else {
+                write(response, isHead: isHead, close: closeAfterResponse, context: context)
+            }
         case .failure(let refusal):
+            if case .success(let response) = result { response.stream?.discard() }     // a status that cannot be sent
             refuse(refusal, context: context)
         }
     }
@@ -260,6 +275,91 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         if hasBody, !isHead, !prepared.body.isEmpty {
             context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: prepared.body)))), promise: nil)
         }
+        let finished = context.eventLoop.makePromise(of: Void.self)
+        context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: finished)
+        if close {
+            let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
+            finished.futureResult.whenComplete { _ in loopContext.value.close(promise: nil) }
+        } else {
+            context.triggerUserOutboundEvent(GuardSignal.responseFinished, promise: nil)
+        }
+    }
+
+    // MARK: Streaming
+
+    /// Sends the head of a streaming response, then runs its producer, writing what it produces as it produces it.
+    ///
+    /// To a client that cannot read chunks (HTTP/1.0) and in answer to `HEAD`, the body is not framed: the head is
+    /// sent and the connection closes after the last byte (there is none for `HEAD`). Otherwise NIO frames it in
+    /// chunks. Whatever happens next, a stream that does not end cleanly closes the connection: after a head has
+    /// gone there is no other way to tell the client that the body is not complete.
+    private func writeStreaming(
+        _ response: Response, stream: ResponseStream, isHead: Bool, version: HTTPProtocolVersion, context: ChannelHandlerContext
+    ) {
+        let prepared = ResponseRules.prepare(response)
+        guard prepared.hasBody else {
+            // A status that has no body (204, 304) has nothing to stream: it is an ordinary bodyless response.
+            stream.discard()
+            write(Response(status: response.status, headers: response.headers), isHead: isHead, close: closeAfterResponse, context: context)
+            return
+        }
+        let unframed = isHead || version == .http1_0
+        if unframed { closeAfterResponse = true }
+        var headers = HTTPHeaders()
+        for field in prepared.fields { headers.add(name: field.name.rawName, value: field.value) }
+        headers.add(name: "Date", value: HTTPDate.string(for: Date()))
+        headers.add(name: "Connection", value: closeAfterResponse ? "close" : "keep-alive")
+        let head = HTTPResponseHead(
+            version: unframed ? .http1_0 : .http1_1, status: HTTPResponseStatus(statusCode: prepared.code), headers: headers)
+        context.writeAndFlush(wrapOutboundOut(.head(head)), promise: nil)
+
+        guard !isHead else {
+            stream.discard()
+            streamEnded(clean: true, context: context)
+            return
+        }
+        let channel = context.channel
+        let session = StreamSession(channel: channel, limits: server.configuration.limits) { buffer in
+            channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(buffer)))
+        }
+        streamSession = session
+        let task = Task { try await stream.produce(ResponseWriter { try await session.write($0) }) }
+        streamTask = task
+        let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
+        let loopSelf = NIOLoopBound(self, eventLoop: context.eventLoop)
+        let liveness = self.liveness
+        let eventLoop = context.eventLoop
+        // The stream's whole life is bounded: past the duration it is cut off, whether the producer is writing or idle.
+        streamTimer = context.eventLoop.scheduleTask(in: server.configuration.limits.maximumStreamDuration.timeAmount) {
+            session.end(.durationLimit)
+            loopContext.value.close(promise: nil)             // closing cancels the producer (see channelInactive)
+        }
+        Task {
+            // A producer that threw ends the stream with the reason it gave (a StreamError), or as closed.
+            if case .failure = await task.result { session.end(.closed) }     // the first reason stays: a limit's is kept
+            // The channel may have closed, and the loop stopped with it, while the producer ran.
+            guard liveness.isOpen else { return }
+            eventLoop.execute {
+                loopSelf.value.streamEnded(clean: session.reason == nil, context: loopContext.value)
+            }
+        }
+    }
+
+    /// The producer has returned (or the head of a `HEAD` response has gone). A stream that ended with a reason, or
+    /// whose channel has gone, ends the connection; a clean end sends the terminator and carries on as a response.
+    private func streamEnded(clean: Bool, context: ChannelHandlerContext) {
+        streamTimer?.cancel()
+        streamTimer = nil
+        streamTask = nil
+        streamSession?.end(.closed)                      // nothing more may be written to this stream
+        streamSession = nil
+        guard clean, context.channel.isActive else {
+            state = .closing
+            context.close(promise: nil)
+            return
+        }
+        let close = closeAfterResponse
+        state = close ? .closing : .idle
         let finished = context.eventLoop.makePromise(of: Void.self)
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: finished)
         if close {
@@ -346,6 +446,11 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
 
     func channelInactive(context: ChannelHandlerContext) {
         liveness.close()
+        streamTimer?.cancel()
+        streamTimer = nil
+        streamTask?.cancel()
+        streamTask = nil
+        streamSession = nil
         cancelBodyTimer()
         inFlight?.cancel()
         inFlight = nil

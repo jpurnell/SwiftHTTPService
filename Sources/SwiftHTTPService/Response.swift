@@ -14,14 +14,21 @@ public struct Response: Sendable, Equatable {
     public var status: HTTPResponse.Status
     /// The header fields.
     public var headers: HTTPFields
-    /// The body. Empty for a response that has none.
+    /// The body. Empty for a response that has none, and for a streaming one (see ``stream``).
     public var body: Data
+    /// The body as it is produced, if this is a streaming response (``Response/streaming(status:headers:produce:)``).
+    public var stream: ResponseStream?
 
     /// Creates a response.
     public init(status: HTTPResponse.Status, headers: HTTPFields = HTTPFields(), body: Data = Data()) {
+        self.init(status: status, headers: headers, body: body, stream: nil)
+    }
+
+    init(status: HTTPResponse.Status, headers: HTTPFields, body: Data, stream: ResponseStream?) {
         self.status = status
         self.headers = headers
         self.body = body
+        self.stream = stream
     }
 
     /// The encoder ``json(_:status:encoder:)`` uses unless given one: keys sorted, slashes unescaped, dates

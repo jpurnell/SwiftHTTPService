@@ -131,4 +131,60 @@ struct AccessLogTests {
         entry = AccessLogEntry(method: "GET", path: "/x", status: 200, responseBytes: 0, duration: .milliseconds(-5), requestID: nil, remoteAddress: nil)
         #expect(entry.line.contains("duration_ms=0 "))
     }
+
+    // MARK: Streaming responses
+
+    private static func streamed(
+        advance: Duration = .zero, discard: Bool = false, fail: Bool = false
+    ) async throws -> (entries: [AccessLogEntry], clock: ManualClock) {
+        struct Boom: Error {}
+        let sink = Sink()
+        let clock = ManualClock()
+        let layer = accessLog(now: { clock.now() }, sink: { entry in Task { await sink.add(entry) } })
+        let response = try await layer(try request("/events?token=secret")) { _ in
+            .streaming(status: .ok) { writer in
+                clock.advance(advance)
+                try await writer.write(Data("12345".utf8))
+                try await writer.write(Data("1234567".utf8))
+                if fail { throw Boom() }
+            }
+        }
+        // Nothing is logged when the handler returns: the bytes are not known yet.
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await sink.entries.isEmpty)
+        let stream = try #require(response.stream)
+        if discard {
+            stream.discard()
+        } else {
+            _ = try? await stream.produce(ResponseWriter { _ in })
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        return (await sink.entries, clock)
+    }
+
+    @Test("A streaming response is logged when the stream ends, with the bytes streamed and the time to the end")
+    func streamedEntry() async throws {
+        let (entries, _) = try await Self.streamed(advance: .milliseconds(400))
+        let entry = try #require(entries.first)
+        #expect(entries.count == 1)
+        #expect(entry.status == 200)
+        #expect(entry.responseBytes == 12)
+        #expect(entry.duration == .milliseconds(400))
+        #expect(entry.path == "/events")
+        #expect(!entry.line.contains("secret"))
+    }
+
+    @Test("A stream that fails is logged with the bytes it sent, once, and its error still reaches the transport")
+    func failedStream() async throws {
+        let (entries, _) = try await Self.streamed(fail: true)
+        #expect(entries.count == 1)
+        #expect(entries.first?.responseBytes == 12)
+    }
+
+    @Test("A stream the transport discards without running (HEAD, a bodyless status) is logged once, with no bytes")
+    func discardedStream() async throws {
+        let (entries, _) = try await Self.streamed(discard: true)
+        #expect(entries.count == 1)
+        #expect(entries.first?.responseBytes == 0)
+    }
 }

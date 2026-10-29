@@ -25,6 +25,9 @@ struct ServiceConfigurationTests {
         #expect(limits.maximumConnections == 256)
         #expect(limits.shutdownGrace == .seconds(10))
         #expect(limits.maximumConcurrentStreams == 100)     // the RFC 9113 suggested minimum (design H3)
+        #expect(limits.maximumStreamDuration == .seconds(3600))
+        #expect(limits.maximumStreamBytes == 1 << 30)       // 1 GiB
+        #expect(limits.streamWriteTimeout == .seconds(30))
         #expect(configuration.protocols == .http1AndHTTP2)  // design H2
         #expect(configuration.connections == .keepAlive)    // connections are reused unless asked otherwise
         #expect(configuration.trustedProxies.isEmpty)       // nothing is trusted unless named
@@ -71,6 +74,19 @@ struct ServiceConfigurationTests {
         #expect(narrowed.host == defaults.host)
         #expect(narrowed.port == defaults.port)
         #expect(narrowed.limits == defaults.limits)
+    }
+
+    @Test("The streaming bounds accept their edges")
+    func streamingEdges() throws {
+        var limits = Limits()
+        limits.maximumStreamDuration = .nanoseconds(1)
+        limits.maximumStreamBytes = 1
+        limits.streamWriteTimeout = .nanoseconds(1)
+        #expect(try ServiceConfiguration(limits: limits).limits == limits)
+        limits.maximumStreamDuration = .seconds(86_400)
+        limits.maximumStreamBytes = 1 << 40
+        limits.streamWriteTimeout = .seconds(3600)
+        #expect(try ServiceConfiguration(limits: limits).limits == limits)
     }
 
     @Test("The stream bound accepts its edges, 1 and 1000")
@@ -120,6 +136,14 @@ struct ServiceConfigurationTests {
         Case(name: "no concurrent streams", field: "limits.maximumConcurrentStreams", reason: .outOfRange, build: limits { $0.maximumConcurrentStreams = 0 }),
         Case(name: "negative concurrent streams", field: "limits.maximumConcurrentStreams", reason: .outOfRange, build: limits { $0.maximumConcurrentStreams = -1 }),
         Case(name: "too many concurrent streams", field: "limits.maximumConcurrentStreams", reason: .outOfRange, build: limits { $0.maximumConcurrentStreams = 1001 }),
+        Case(name: "zero stream duration", field: "limits.maximumStreamDuration", reason: .outOfRange, build: limits { $0.maximumStreamDuration = .zero }),
+        Case(name: "negative stream duration", field: "limits.maximumStreamDuration", reason: .outOfRange, build: limits { $0.maximumStreamDuration = .seconds(-1) }),
+        Case(name: "stream duration over a day", field: "limits.maximumStreamDuration", reason: .outOfRange, build: limits { $0.maximumStreamDuration = .seconds(86_401) }),
+        Case(name: "no stream bytes", field: "limits.maximumStreamBytes", reason: .outOfRange, build: limits { $0.maximumStreamBytes = 0 }),
+        Case(name: "negative stream bytes", field: "limits.maximumStreamBytes", reason: .outOfRange, build: limits { $0.maximumStreamBytes = -1 }),
+        Case(name: "stream bytes over a tebibyte", field: "limits.maximumStreamBytes", reason: .outOfRange, build: limits { $0.maximumStreamBytes = (1 << 40) + 1 }),
+        Case(name: "zero stream write timeout", field: "limits.streamWriteTimeout", reason: .outOfRange, build: limits { $0.streamWriteTimeout = .zero }),
+        Case(name: "stream write timeout over an hour", field: "limits.streamWriteTimeout", reason: .outOfRange, build: limits { $0.streamWriteTimeout = .seconds(3601) }),
         Case(name: "empty host", field: "host", reason: .empty, build: { try ServiceConfiguration(host: "") }),
         Case(name: "blank host", field: "host", reason: .empty, build: { try ServiceConfiguration(host: "   ") }),
         Case(name: "host with a space", field: "host", reason: .malformed, build: { try ServiceConfiguration(host: "a b") }),
