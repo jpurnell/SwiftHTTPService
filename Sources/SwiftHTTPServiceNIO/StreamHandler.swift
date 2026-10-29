@@ -27,6 +27,8 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         var target: String
         var fields: HTTPFields
         var isHead: Bool
+        /// This request's body bound: its route's, or the server's. Fixed when the head arrived.
+        var bodyLimit: Int
         var body: ByteBuffer
     }
 
@@ -63,8 +65,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
             reset(.protocolError, context: context)
         case (.data(let frame), .receiving(var receiving)):
             guard case .byteBuffer(var chunk) = frame.data else { return }
-            let limit = server.configuration.limits.maximumBodyBytes
-            guard RequestRules.bodyFits(received: receiving.body.readableBytes, incoming: chunk.readableBytes, limit: limit) else {
+            guard RequestRules.bodyFits(received: receiving.body.readableBytes, incoming: chunk.readableBytes, limit: receiving.bodyLimit) else {
                 refuse(.bodyTooLarge, requestEnded: false, context: context)
                 return
             }
@@ -155,12 +156,13 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
             refuse(.malformedTarget, requestEnded: block.endStream, context: context)
             return
         }
-        if let declaredLength, !RequestRules.declaredLengthFits(declaredLength, limit: server.configuration.limits.maximumBodyBytes) {
+        let bodyLimit = server.bodyLimit(method: verb, target: path)
+        if let declaredLength, !RequestRules.declaredLengthFits(declaredLength, limit: bodyLimit) {
             refuse(.bodyTooLarge, requestEnded: block.endStream, context: context)
             return
         }
         let receiving = Receiving(
-            method: verb, target: path, fields: fields, isHead: verb == .head, body: context.channel.allocator.buffer(capacity: 0))
+            method: verb, target: path, fields: fields, isHead: verb == .head, bodyLimit: bodyLimit, body: context.channel.allocator.buffer(capacity: 0))
         if block.endStream {
             dispatch(receiving, context: context)
         } else {
