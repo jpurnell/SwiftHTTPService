@@ -32,6 +32,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         var fields: HTTPFields
         var keepAlive: Bool
         var isHead: Bool
+        var version: HTTPProtocolVersion
         var body: ByteBuffer
         /// The Content-Length, or nil for a chunked body or none.
         var declaredLength: Int?
@@ -115,7 +116,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         }
         state = .receiving(Receiving(
             method: validated.method, target: head.uri, fields: validated.fields, keepAlive: head.isKeepAlive,
-            isHead: head.method == .HEAD, body: context.channel.allocator.buffer(capacity: 0),
+            isHead: head.method == .HEAD, version: head.version.minor == 0 ? .http1_0 : .http1_1, body: context.channel.allocator.buffer(capacity: 0),
             declaredLength: validated.declaredLength, expectsBody: validated.expectsBody))
         if validated.expectsBody { armBodyTimer(context: context) }
     }
@@ -189,7 +190,8 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         let built = Result {
             try Request(
                 method: receiving.method, target: receiving.target, headers: receiving.fields,
-                body: Data(receiving.body.readableBytesView), remoteAddress: context.remoteAddress?.ipAddress)
+                body: Data(receiving.body.readableBytesView), remoteAddress: context.remoteAddress?.ipAddress,
+                httpVersion: receiving.version)
         }
         guard case .success(let request) = built else {
             refuse(.malformedTarget, context: context)
