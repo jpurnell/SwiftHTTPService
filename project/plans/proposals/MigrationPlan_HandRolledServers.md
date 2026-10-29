@@ -52,9 +52,13 @@ a bug.
 
 ### 4.1 SwiftPushHub — first
 
-**Why first:** its README says "bootstrapped; nothing here runs yet" (the code is 2,500 lines and the README
-is stale, which is a housekeeping fix in its own right), so nothing live depends on it, and it has no
-assets, forms or wildcards.
+**Why first (corrected 2026-10-29):** this plan first said the README read "bootstrapped; nothing here runs yet", so
+nothing live depended on it. That README was stale. SwiftPushHub is v1.0.1, shipped, with a notarized macOS Inbox and a
+watchOS Inbox verified on a real Watch, public and observation intake, and 596 tests, and it **is running on Teletran 2**
+(`com.roseclub.swiftpush-hub`): a live system that sends alerts to the owner's devices. It is still the right first move,
+because it is the smallest of the live servers, the best tested, and its listener is the same code FleetWatch has, so
+it proves the swap pattern. But it needs the full safety net (recorded exchange, run beside the old, rollback binary),
+and the deploy is the owner's step.
 1. Fix the README status to match the code.
 2. Replace `HubHTTPServer` with the kit's transport and `HubRouter`'s `switch` with `Router`. Keep
    `HubRouter`'s handler bodies; adapt `HubRequest`/`HubResponse` to the kit's types in one file.
@@ -122,6 +126,11 @@ Replacing the transport entirely is a decision for after the kit can stream, and
   `503 computing` (a cold cache). The three days end about **2026-11-01 23:00 UTC**; the measure is the audit log
   (`~/ijs-dashboard/logs/audit.log`): any `5xx` other than `computing`, a change of process id, and growth in memory or
   descriptors. Rollback is `~/ijs-dashboard/ijs-dashboard-server.prev` (the 0.2.0 build).
+  **Revised by the owner, 2026-10-29: Gate A is waived.** One consumer on one golden path, with a handful of requests an
+  hour from the owner's own devices, gives a rare-event soak almost no chance to show anything, so a clean three days
+  would be weak evidence and is not worth waiting for. Each migration instead carries its own safety net: the
+  recorded-exchange replay (section 4), the new server run beside the old on another port before the cut-over, and the
+  previous binary kept for rollback. The dashboard server stays on 0.4.0 and its audit log is watched passively.
 - **D2: A, build streaming responses into the kit.** "We should have all of this done." The consequence is that
   SwiftMCPServer's transport can eventually move too (§4.4's "not wholesale" is revisited after streaming ships).
 - **D3: A, explicit routes, no tail wildcard.** Evidence: all four FleetWatch "wildcards" are single-segment

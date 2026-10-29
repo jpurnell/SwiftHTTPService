@@ -83,8 +83,10 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
   triggers, the shutdown fix); a consumer's findings then added the 0.4.0 items under "Next release" below, which
   come before migration. Migration's own decisions (below) are the owner's.
 - [ ] Migrate the other hand-rolled servers, after the 0.4.0 items below, and once the kit has served real traffic: `project/plans/proposals/MigrationPlan_HandRolledServers.md`.
-  **Gate A's clock started 2026-10-29** (the server moved to 0.4.0 on Teletran 2; it ends about 2026-11-01 23:00 UTC; see
-  the migration plan section 6).
+  **Gate A was waived by the owner on 2026-10-29** (the dashboard server moved to 0.4.0 on Teletran 2 that day; one consumer
+  on one golden path is too weak a soak to wait for): each migration carries its own recorded-exchange replay, a run beside
+  the old server and a rollback binary instead. SwiftPushHub, first in line, turned out to be live (v1.0.1, running), not
+  "nothing runs yet" as the plan assumed; see the migration plan section 4.1.
   **Real traffic began 2026-10-28:** `ijs-dashboard-server`, deployed on Teletran 2 (port 9140), runs on this kit. The
   plan's decisions are all still open: D1 (how long it must run cleanly before anything migrates, so the clock
   has started but its length is not set), D2 (streaming responses), D3 (tail wildcards) and D4 (whether FleetWatch
@@ -168,7 +170,7 @@ note before code.
 
 ---
 
-**Last Updated:** 2026-10-29 (Gate A's clock started: `ijs-dashboard-server` deployed on v0.4.0; v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-10-29 (Gate A waived by the owner; SwiftPushHub found to be live, not unbuilt; `ijs-dashboard-server` deployed on v0.4.0; v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)
