@@ -26,6 +26,19 @@ struct ServiceConfigurationTests {
         #expect(limits.shutdownGrace == .seconds(10))
         #expect(limits.maximumConcurrentStreams == 100)     // the RFC 9113 suggested minimum (design H3)
         #expect(configuration.protocols == .http1AndHTTP2)  // design H2
+        #expect(configuration.connections == .keepAlive)    // connections are reused unless asked otherwise
+    }
+
+    @Test("The connection mode can be set to close after each response, and nothing else is changed by it")
+    func connectionsSet() throws {
+        let closing = try ServiceConfiguration(connections: .closeAfterResponse)
+        let defaults = try ServiceConfiguration()
+        #expect(closing.connections == .closeAfterResponse)
+        #expect(closing.host == defaults.host)
+        #expect(closing.port == defaults.port)
+        #expect(closing.limits == defaults.limits)
+        #expect(closing.protocols == defaults.protocols)
+        #expect(closing != defaults)                         // it is part of what a configuration is
     }
 
     @Test("The protocols can be narrowed to HTTP/1.1 and nothing else is changed by it")
