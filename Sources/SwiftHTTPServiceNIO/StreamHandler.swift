@@ -192,7 +192,8 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         let built = Result {
             try Request(
                 method: receiving.method, target: receiving.target, headers: receiving.fields,
-                body: Data(receiving.body.readableBytesView), remoteAddress: context.channel.parent?.remoteAddress?.ipAddress)
+                body: Data(receiving.body.readableBytesView), remoteAddress: context.channel.parent?.remoteAddress?.ipAddress,
+                httpVersion: .http2)
         }
         guard case .success(let request) = built else {
             refuse(.malformedTarget, requestEnded: true, context: context)

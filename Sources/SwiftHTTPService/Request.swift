@@ -26,6 +26,28 @@ public struct QueryItem: Sendable, Equatable {
     }
 }
 
+/// The version of HTTP that carried a request.
+///
+/// A handler should not need it: the same handler serves every version. It is here for what does, such as a
+/// log line, a metric, or a refusal that only makes sense for one.
+public enum HTTPProtocolVersion: Sendable, Equatable, CustomStringConvertible {
+    /// HTTP/1.0.
+    case http1_0
+    /// HTTP/1.1.
+    case http1_1
+    /// HTTP/2.
+    case http2
+
+    /// The version as the protocol writes it.
+    public var description: String {
+        switch self {
+        case .http1_0: "HTTP/1.0"
+        case .http1_1: "HTTP/1.1"
+        case .http2: "HTTP/2"
+        }
+    }
+}
+
 /// An HTTP request after its target has been parsed, strictly and once.
 ///
 /// The target must be origin-form (`/path?query`) and unambiguous. A path is split into segments
@@ -50,6 +72,8 @@ public struct Request: Sendable {
     public let body: Data
     /// The peer's address as the transport saw it, if it knows.
     public let remoteAddress: String?
+    /// The version of HTTP that carried the request. HTTP/1.1 for a request built without one.
+    public let httpVersion: HTTPProtocolVersion
     /// Values the router captured from `{name}` segments.
     public internal(set) var pathParameters: [String: String]
     /// Values middleware have attached.
@@ -59,7 +83,8 @@ public struct Request: Sendable {
     ///
     /// - Throws: ``RequestError/malformedTarget``.
     public init(
-        method: HTTPRequest.Method, target: String, headers: HTTPFields, body: Data, remoteAddress: String? = nil
+        method: HTTPRequest.Method, target: String, headers: HTTPFields, body: Data, remoteAddress: String? = nil,
+        httpVersion: HTTPProtocolVersion = .http1_1
     ) throws {
         let parts = try Self.parse(target)
         self.method = method
@@ -70,6 +95,7 @@ public struct Request: Sendable {
         self.headers = headers
         self.body = body
         self.remoteAddress = remoteAddress
+        self.httpVersion = httpVersion
         self.pathParameters = [:]
         self.context = Context()
     }
