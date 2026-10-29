@@ -6,6 +6,59 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-29
+
+Request id, access log and a rate limiter in the core; reload triggers in the transport; and a fix for a latent
+crash. Nothing a caller of 0.2.0 writes changes.
+
+### Fixed
+- **Nothing touches an event loop after it has stopped.** NIO printed "Cannot schedule tasks on an EventLoop that
+  has already shut down" once per server shutdown and says it will become a forced crash. Found with
+  `SWIFTNIO_STRICT=true` and a backtrace for each; three causes. `ServerQuiescingHelper`'s `deinit` completes a
+  promise on a loop, and the helper was released when the shutdown task ended, after the loops had stopped (on
+  shutdown, and on a failed bind). And a handler that finished after its connection and the loops were gone hopped
+  back onto a stopped loop, in `ConnectionHandler` and in `StreamHandler`. The helper is released before the
+  group stops, and a handler's task checks that its channel is still open (`ChannelLiveness`). Tests watch
+  standard error for the message: shutdown, a failed bind, and a handler outliving shutdown over each version
+  of HTTP.
+
+### Added: request id, access log, rate limiter (`SwiftHTTPService`)
+Design: `project/plans/proposals/DesignProposal_Middleware.md`. All are `Middleware` in the core, with time
+injected so the tests are deterministic.
+- `requestID(header:generate:)` and `RequestID`, `HTTPField.Name.requestID`. An id offered by the caller is
+  untrusted (it ends up in logs): used only if 1 to 64 characters of `A-Z a-z 0-9 . _ -`, otherwise replaced by a
+  generated one, whole, never cleaned (a cleaned id can collide with a real one). A handler cannot override it.
+- `accessLog(now:requestIDHeader:sink:)` and `AccessLogEntry`. No query string, header or body is ever recorded.
+  A handler that throws is logged as `500` and the error goes on; its text is never logged. `line` is `key=value`
+  with every value quoted and escaped (anything not printable ASCII is `\xNN` or `\u{...}`), so a value cannot end
+  its field or start a second line.
+- `RateLimit`, `RateLimiter`, `rateLimit(_:key:)`, `RateLimitError`. GCRA in integer nanoseconds: no floating
+  point, one integer per client. Validated, nothing clamped (requests 1 to 1,000,000; interval up to a day;
+  burst 1 to 10,000; the bounds keep the arithmetic inside `Int`). The table is bounded (`maximumKeys`, default
+  10,000): idle clients go first, then the least recently active, so a flood of keys cannot grow memory. `429`
+  as a problem (`rate_limited`) with `Retry-After` in whole seconds, rounded up. By default the key is the peer's
+  address; behind a proxy that is the proxy, so key on what it reports.
+- 27 hand mutations of the three. 22 were caught at first; the survivors were one missing test (idle time must not
+  build credit past the bucket), one redundant clamp on `Retry-After` (removed: rounding up already gives at least
+  one second), and one equivalent mutant (purging a client whose time equals now, which eviction would remove
+  anyway). The `Retry-After` floor stays pinned by a test.
+
+### Added: reload triggers (`SwiftHTTPServiceNIO`)
+Design: `project/plans/proposals/DesignProposal_ReloadTriggers.md`. SwiftTLSKit has the loop and deliberately no
+sources of triggers.
+- `TLSReloadTrigger.hangup()`: one element per `SIGHUP`. The signal's default action is replaced for as long as
+  the stream lives; when it ends the disposition found is put back (a test reads it with `sigaction`).
+- `TLSReloadTrigger.every(_:)`: one element per interval, validated (above zero, at most a day). Pull-based, so no
+  task runs in the background; it ends with `CancellationError` when the consumer is cancelled.
+- `HTTPServer.reloadTLS(onEach:mode:report:)` (a stream that cannot throw, and one that can): reloads once per
+  trigger through the server's state at that moment, so it can start before `start()` and survives a restart; a
+  trigger with nothing serving TLS reports nothing. `mode` has no default, as in SwiftTLSKit.
+- The parameter is `AsyncStream<Void>`, not a generic `AsyncSequence`: the generic form either warns about
+  isolated conformances or needs `next(isolation:)`, which is macOS 15, and this package supports 14.
+
+### Tests
+151 in the transport (from 137) and 104 in the core (from 76).
+
 ## [0.2.0] - 2026-10-28
 
 HTTP/2 over TLS. Nothing a caller of 0.1.0 writes changes: `ServiceConfiguration` and `Limits` gain defaulted
@@ -122,6 +175,7 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jpurnell/SwiftHTTPService/releases/tag/v0.1.0

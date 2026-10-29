@@ -22,6 +22,14 @@ path because there is no release yet; a 0.1.0 is needed. Design: `project/plans/
 - `EntityTag`, `Conditional`: `If-None-Match` as RFC 9110 defines it (weak comparison, `*`, lists); a value
   that does not parse matches nothing, so the answer is a full response and never a wrong `304`.
 - `Router.addHealth()`: `GET /health` with a constant body that reveals nothing.
+- `requestID(...)`: an id on every request and response. An id the caller offers is used only if it is 1 to 64
+  characters of `A-Z a-z 0-9 . _ -`; otherwise a generated one replaces it, whole.
+- `accessLog(sink:)`: an `AccessLogEntry` per request (method, path without its query, status, bytes, duration,
+  id, peer) and a one-line `key=value` form in which no value can end its field or start another line. The
+  query, headers and body are never recorded.
+- `RateLimiter`, `rateLimit(_:key:)`: a per-client limit (GCRA, integer nanoseconds, one number per client) with
+  a bounded table, `429` as a problem with `Retry-After`. Behind a proxy, key on what the proxy reports.
+  Order, outermost first: access log, request id, rate limiter, the rest.
 
 ## The transport (`SwiftHTTPServiceNIO`)
 
@@ -39,7 +47,9 @@ a missing or unreadable file, a key others can read, a key that does not match, 
 and an expired leaf each stop `start()` with `HTTPServerError.tlsIdentity(...)` carrying SwiftTLSKit's typed
 error (it names the path, never the contents), and the server can be started again once they are fixed.
 `server.reloadTLS()` takes a renewed certificate without a restart (new connections get it, open ones are
-untouched; unfit files leave the old identity serving and say so). **Plaintext is for loopback**: the host
+untouched; unfit files leave the old identity serving and say so). To reload on a signal or a timer, run
+`server.reloadTLS(onEach: TLSReloadTrigger.hangup(), mode: .always, report: ...)` (or
+`TLSReloadTrigger.every(...)` with `.ifChanged`) in a task; it survives a restart of the server. **Plaintext is for loopback**: the host
 defaults to `127.0.0.1`, and a host SwiftTLSKit's `BindExposure` calls exposed (`0.0.0.0`, a name, a LAN
 address) with no TLS identity is `HTTPServerError.exposedPlaintext`. Every limit in `Limits` is enforced, and
 none is clamped; a value out of range makes `ServiceConfiguration` throw an error that names the field and
@@ -55,6 +65,7 @@ not the value.
 | `idleTimeout` | 60 s | up to 1 h | close, nothing written. Applies between requests and before the first byte |
 | `maximumConnections` | 256 | 1 to 100,000 | the connection is closed at once with nothing written |
 | `shutdownGrace` | 10 s | 0 to 10 min | whatever is still open when it ends is closed |
+| `maximumConcurrentStreams` | 100 | 1 to 1000 | HTTP/2 only. Advertised in SETTINGS and enforced; a stream past it is refused |
 
 **Refused as ambiguous (`400`, close):** a `Content-Length` with a `Transfer-Encoding`; a duplicate, signed,
 hexadecimal, listed or non-numeric `Content-Length`; any `Transfer-Encoding` other than exactly `chunked` (and
