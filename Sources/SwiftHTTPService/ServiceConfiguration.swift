@@ -117,6 +117,19 @@ public struct ServiceConfiguration: Sendable, Equatable {
     public let limits: Limits
     /// Which versions of HTTP the server speaks.
     public let protocols: Protocols
+    /// Whether a connection is kept for the next request.
+    public let connections: ConnectionReuse
+
+    /// Whether the server keeps a connection open for the next request.
+    ///
+    /// This is about HTTP/1.1. A stream in HTTP/2 is one request already, so the setting changes nothing there.
+    public enum ConnectionReuse: Sendable, Equatable {
+        /// Keep a connection open between requests, until the client or the idle timeout ends it. The default.
+        case keepAlive
+        /// Answer with `Connection: close` and close after each response, whatever the client asked. For a client
+        /// that cannot reuse a connection (a hook script, a phone on a poor link) and would otherwise wait on one.
+        case closeAfterResponse
+    }
 
     /// Which versions of HTTP a server speaks. HTTP/2 is only ever negotiated over TLS (through ALPN):
     /// plaintext is HTTP/1.1, and there is no `h2c`.
@@ -130,7 +143,9 @@ public struct ServiceConfiguration: Sendable, Equatable {
     /// Creates a configuration.
     ///
     /// - Throws: ``ConfigurationError`` naming the first field that is refused.
-    public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits(), protocols: Protocols = .http1AndHTTP2) throws(ConfigurationError) {
+    public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits(), protocols: Protocols = .http1AndHTTP2,
+        connections: ConnectionReuse = .keepAlive
+    ) throws(ConfigurationError) {
         try Self.validate(host: host)
         if let tls {
             try Self.validate(path: tls.certificateChainPath, field: "tls.certificateChainPath")
@@ -142,6 +157,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
         self.tls = tls
         self.limits = limits
         self.protocols = protocols
+        self.connections = connections
     }
 
     // MARK: Validation
