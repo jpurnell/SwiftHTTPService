@@ -45,8 +45,11 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     private let liveness = ChannelLiveness()
     private var bodyTimer: Scheduled<Void>?
 
-    init(server: ServerContext) {
+    private let identity: ConnectionIdentity
+
+    init(server: ServerContext, identity: ConnectionIdentity = ConnectionIdentity()) {
         self.server = server
+        self.identity = identity
     }
 
     deinit {
@@ -197,7 +200,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
                 method: receiving.method, target: receiving.target, headers: receiving.fields,
                 body: Data(receiving.body.readableBytesView),
                 remoteAddress: ClientAddress.resolve(
-                    peer: peer, proxied: nil, forwardedFor: receiving.fields.forwardedForValues, configuration: server.configuration),
+                    peer: peer, proxied: identity.client, forwardedFor: receiving.fields.forwardedForValues, configuration: server.configuration),
                 httpVersion: .http2, peerAddress: peer)
         }
         guard case .success(let request) = built else {

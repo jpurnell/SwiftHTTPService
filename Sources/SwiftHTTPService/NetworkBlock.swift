@@ -47,6 +47,26 @@ public struct NetworkBlock: Sendable, Equatable, CustomStringConvertible {
         octets(of: text, mappedAsIPv4: true) != nil
     }
 
+    /// The one canonical text of an address literal, or nil if `text` is not one: IPv4 dotted, IPv6 in the RFC 5952
+    /// form, and an IPv4-mapped IPv6 address as the IPv4 address it names. Two spellings of one address therefore
+    /// become one string, which is what a rate limit or a log should key on.
+    public static func canonicalAddress(_ text: String) -> String? {
+        octets(of: text, mappedAsIPv4: true).flatMap(canonicalAddress(octets:))
+    }
+
+    /// The canonical text of an address given as 4 (IPv4) or 16 (IPv6) octets, or nil for any other length.
+    public static func canonicalAddress(octets: [UInt8]) -> String? {
+        switch octets.count {
+        case 4:
+            return text(ofIPv4: octets)
+        case 16:
+            let isMapped = octets[0..<10].allSatisfy { $0 == 0 } && octets[10] == 0xFF && octets[11] == 0xFF
+            return isMapped ? text(ofIPv4: Array(octets[12...])) : text(ofIPv6: octets)
+        default:
+            return nil
+        }
+    }
+
     /// The block with an explicit prefix: `10.1.2.0/24`, `198.51.100.9/32`, `fd00::/8`. IPv6 is written the way
     /// RFC 5952 recommends: lower case, no leading zeros, the longest run of zero groups as `::`.
     public var description: String {

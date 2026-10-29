@@ -70,13 +70,24 @@ same handlers are serialised after them.
   connection. HTTP/2 is unaffected (a stream is one request already).
 
 ## 7. Trusted proxy
-- A security decision before a feature. `trustedProxies`: a list of CIDR blocks; nothing is trusted by default.
-  `Request.remoteAddress` stays the client address as the handler should see it; `Request.peerAddress` is the
-  socket's. Forwarded information is believed only if the **socket peer** is in `trustedProxies`.
-- `forwarding: .none | .xForwardedFor | .proxyProtocol`. `xForwardedFor`: walk the list from the right, skipping
-  trusted addresses; the first untrusted is the client (a header that a client controls is never believed from
-  the left). `proxyProtocol`: v1 and v2, read before any HTTP from a trusted peer only; from an untrusted peer a
-  PROXY header is a refusal. A malformed header closes the connection with nothing written.
+- A security decision before a feature, and one rule: **forwarded information is believed only from a trusted peer.**
+  `ServiceConfiguration(trustedProxies:forwarding:)`: a list of CIDR blocks (`NetworkBlock`, parsed by strict Swift
+  parsers: no leading zeros, no zone ids, no signs; the block of every address, `/0`, is refused) and a mode,
+  `.none` (default), `.xForwardedFor` or `.proxyProtocol`. Forwarding with nobody trusted is a configuration error.
+- `Request.remoteAddress` is the client as the handler should see it (rate limits and the access log key on it);
+  `Request.peerAddress` is always the socket's.
+- `.xForwardedFor`: from a trusted peer, the header is read **from the right**: the first address that is not itself
+  a trusted proxy is the client (a client controls what it writes at the left; a proxy controls what it appends).
+  Anything that is not an address, a port on an address, an empty entry, or more than 20 entries means the peer is
+  used, never a guess.
+- `.proxyProtocol`: version 1 (text) and version 2 (binary), parsed by a pure function that is strict (a doubled
+  space, a leading zero, a wrong family, an unknown version, a length over 1024 are all refused). **A trusted peer
+  must send the header** (not a header, a malformed one, or one unfinished at the header timeout closes the
+  connection with nothing written). **Any other peer must not**: one that begins with a header is pretending to be
+  a proxy and is closed; one that begins with anything else is served as itself. The handler is at the very front
+  of the pipeline, ahead of TLS, because the header precedes the handshake (SwiftTLSKit adds its handler at the
+  front, so the PROXY handler is added after it). An earlier version of the tests passed with the header decrypted
+  by TLS first, which is not the protocol; the test clients now write it unencrypted too.
 
 ## 8. Streaming responses
 - `Response.streaming(status:headers:body:)` where `body` is `@Sendable (inout ResponseWriter) async throws -> Void`.

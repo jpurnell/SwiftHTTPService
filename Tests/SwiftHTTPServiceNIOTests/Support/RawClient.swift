@@ -42,6 +42,18 @@ final class Collector: ChannelInboundHandler, @unchecked Sendable {
     }
 }
 
+/// Writes its bytes straight to the socket when the connection opens, ahead of any handler after it.
+final class PreludeWriter: ChannelInboundHandler, Sendable {
+    typealias InboundIn = ByteBuffer
+    private let bytes: [UInt8]
+    init(bytes: [UInt8]) { self.bytes = bytes }
+
+    func channelActive(context: ChannelHandlerContext) {
+        context.writeAndFlush(NIOAny(ByteBuffer(bytes: bytes)), promise: nil)
+        context.fireChannelActive()
+    }
+}
+
 /// A bare TCP (optionally TLS) client for tests: it writes the bytes it is told to and records what comes back.
 struct RawClient: Sendable {
     let channel: any Channel
@@ -49,7 +61,7 @@ struct RawClient: Sendable {
 
     /// Connects to `address`. With `tls`, speaks TLS using that SwiftTLSKit client context, naming the server `localhost`.
     static func connect(
-        to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext? = nil
+        to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext? = nil, prelude: [UInt8]? = nil
     ) async throws -> RawClient {
         let collector = Collector()
         let channel = try await ClientBootstrap(group: group)
@@ -57,6 +69,9 @@ struct RawClient: Sendable {
                 channel.eventLoop.makeCompletedFuture {
                     if let tls { try tls.addHandlers(to: channel.pipeline.syncOperations, serverHostname: "localhost") }
                     try channel.pipeline.syncOperations.addHandler(collector)
+                    // Bytes written before anything else, even before a TLS handshake: a PROXY protocol header. TLS adds
+                    // its handlers at the front, so this goes in after it, at the front, to be ahead of it.
+                    if let prelude { try channel.pipeline.syncOperations.addHandler(PreludeWriter(bytes: prelude), position: .first) }
                 }
             }
             .connect(host: address.host, port: address.port)

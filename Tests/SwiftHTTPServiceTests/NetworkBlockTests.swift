@@ -146,6 +146,28 @@ struct NetworkBlockTests {
         #expect(try NetworkBlock("1.2.3.4").contains("0:0:0:0:100:ffff:1.2.3.4") == false)
     }
 
+    @Test("An address has one canonical text: IPv4 dotted, IPv6 in the RFC 5952 form, IPv4-mapped IPv6 as its IPv4 self")
+    func canonical() {
+        #expect(NetworkBlock.canonicalAddress("203.0.113.9") == "203.0.113.9")
+        #expect(NetworkBlock.canonicalAddress("2001:0DB8:0:0:0:0:0:9") == "2001:db8::9")
+        #expect(NetworkBlock.canonicalAddress("::ffff:203.0.113.9") == "203.0.113.9")
+        #expect(NetworkBlock.canonicalAddress("::FFFF:cb00:7109") == "203.0.113.9")
+        #expect(NetworkBlock.canonicalAddress("::1") == "::1")
+        #expect(NetworkBlock.canonicalAddress("not an address") == nil)
+        #expect(NetworkBlock.canonicalAddress("10.0.0.0/8") == nil)
+        #expect(NetworkBlock.canonicalAddress("") == nil)
+    }
+
+    @Test("Octets become that same text: 4 for IPv4, 16 for IPv6, and nothing for any other length")
+    func canonicalFromOctets() {
+        #expect(NetworkBlock.canonicalAddress(octets: [203, 0, 113, 9]) == "203.0.113.9")
+        #expect(NetworkBlock.canonicalAddress(octets: [0x20, 0x01, 0x0D, 0xB8] + [UInt8](repeating: 0, count: 11) + [9]) == "2001:db8::9")
+        #expect(NetworkBlock.canonicalAddress(octets: [UInt8](repeating: 0, count: 10) + [0xFF, 0xFF, 203, 0, 113, 9]) == "203.0.113.9")
+        #expect(NetworkBlock.canonicalAddress(octets: [1, 2, 3]) == nil)
+        #expect(NetworkBlock.canonicalAddress(octets: []) == nil)
+        #expect(NetworkBlock.canonicalAddress(octets: [UInt8](repeating: 0, count: 15)) == nil)
+    }
+
     @Test("A text is an address on its own, with no prefix, if it is an IPv4 or IPv6 literal")
     func isAddress() {
         #expect(NetworkBlock.isAddress("203.0.113.9"))
