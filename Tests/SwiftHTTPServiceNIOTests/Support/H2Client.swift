@@ -85,7 +85,8 @@ struct H2Client: Sendable {
     /// - Parameter lenient: Turns off this client's own HTTP/2 validation, so it can send what a conforming
     ///   client never would: that is how the server's refusals are tested.
     static func connect(
-        to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext, lenient: Bool = false
+        to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext, lenient: Bool = false,
+        prelude: [UInt8]? = nil
     ) async throws -> H2Client {
         let recorder = NegotiationRecorder()
         let box = NIOLockedValueBox<NIOHTTP2Handler.StreamMultiplexer?>(nil)
@@ -94,6 +95,8 @@ struct H2Client: Sendable {
                 channel.eventLoop.makeCompletedFuture {
                     let operations = channel.pipeline.syncOperations
                     try tls.addHandlers(to: operations, serverHostname: "localhost")
+                    // Written ahead of the TLS handshake, which adds its handlers at the front: so this goes in after it.
+                    if let prelude { try operations.addHandler(PreludeWriter(bytes: prelude), position: .first) }
                     try operations.addHandler(recorder)
                     var configuration = NIOHTTP2Handler.ConnectionConfiguration()
                     if lenient {

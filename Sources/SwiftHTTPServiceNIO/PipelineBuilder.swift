@@ -20,8 +20,10 @@ enum PipelineBuilder {
         // The handlers are made inside the loop's own closure, so no handler crosses a thread.
         channel.eventLoop.submit {
             let operations = channel.pipeline.syncOperations
+            let identity = ConnectionIdentity()
             guard let tls else {
-                try addHTTP1(to: operations, context: context)
+                try addHTTP1(to: operations, context: context, identity: identity)
+                try addProxyProtocolHandler(to: operations, context: context, identity: identity)
                 return
             }
             // The identity current at this moment, so a connection after a reload gets the renewed one.
@@ -37,12 +39,13 @@ enum PipelineBuilder {
                 }
                 return channel.eventLoop.makeCompletedFuture {
                     switch ProtocolNegotiation.select(negotiated: negotiated, configured: context.configuration.protocols) {
-                    case .http1: try addHTTP1(to: channel.pipeline.syncOperations, context: context)
-                    case .http2: try addHTTP2(to: channel.pipeline.syncOperations, context: context)
+                    case .http1: try addHTTP1(to: channel.pipeline.syncOperations, context: context, identity: identity)
+                    case .http2: try addHTTP2(to: channel.pipeline.syncOperations, context: context, identity: identity)
                     case nil: channel.close(promise: nil)
                     }
                 }
             })
+            try addProxyProtocolHandler(to: operations, context: context, identity: identity)
         }
     }
 
@@ -51,7 +54,17 @@ enum PipelineBuilder {
         try await installFuture(on: channel, context: context, tls: tls).get()
     }
 
-    private static func addHTTP1(to operations: ChannelPipeline.SynchronousOperations, context: ServerContext) throws {
+    /// When the server reads the PROXY protocol, the handler for it goes at the very front of the pipeline: a load
+    /// balancer sends its header before anything else on the connection, the TLS handshake included, and TLS adds
+    /// its own handler at the front, so this has to be added after it to be ahead of it.
+    private static func addProxyProtocolHandler(
+        to operations: ChannelPipeline.SynchronousOperations, context: ServerContext, identity: ConnectionIdentity
+    ) throws {
+        guard context.configuration.forwarding == .proxyProtocol else { return }
+        try operations.addHandler(ProxyProtocolHandler(configuration: context.configuration, identity: identity), position: .first)
+    }
+
+    private static func addHTTP1(to operations: ChannelPipeline.SynchronousOperations, context: ServerContext, identity: ConnectionIdentity) throws {
         let limits = context.configuration.limits
         // NIO's parser bounds the number of header fields. The size of the request line and headers is
         // bounded earlier and more tightly by HeadGuard, which sees the bytes before the parser does.
@@ -60,10 +73,10 @@ enum PipelineBuilder {
         try operations.addHandler(HeadGuard(limits: limits))
         try operations.addHandler(ByteToMessageHandler(HTTPRequestDecoder(limitConfiguration: decoderLimits)))
         try operations.addHandler(HTTPResponseEncoder())
-        try operations.addHandler(ConnectionHandler(server: context))
+        try operations.addHandler(ConnectionHandler(server: context, identity: identity))
     }
 
-    private static func addHTTP2(to operations: ChannelPipeline.SynchronousOperations, context: ServerContext) throws {
+    private static func addHTTP2(to operations: ChannelPipeline.SynchronousOperations, context: ServerContext, identity: ConnectionIdentity) throws {
         let limits = context.configuration.limits
         var connection = NIOHTTP2Handler.ConnectionConfiguration()
         connection.initialSettings = [
@@ -82,7 +95,7 @@ enum PipelineBuilder {
             streamDelegate: management.http2StreamDelegate,
             inboundStreamInitializer: { stream in
                 stream.eventLoop.makeCompletedFuture {
-                    try stream.pipeline.syncOperations.addHandler(StreamHandler(server: context))
+                    try stream.pipeline.syncOperations.addHandler(StreamHandler(server: context, identity: identity))
                 }
             })
         try operations.addHandler(management)
