@@ -89,15 +89,24 @@ same handlers are serialised after them.
   front, so the PROXY handler is added after it). An earlier version of the tests passed with the header decrypted
   by TLS first, which is not the protocol; the test clients now write it unencrypted too.
 
-## 8. Streaming responses
-- `Response.streaming(status:headers:body:)` where `body` is `@Sendable (inout ResponseWriter) async throws -> Void`.
-  The status and headers are fixed when the stream starts; `write(_:)` suspends under backpressure (the channel's
-  writability), so a slow reader slows the producer and memory stays bounded.
-- Bounds, all in `Limits`, validated, nothing clamped: `maximumStreamDuration`, `maximumStreamBytes`,
-  `streamWriteTimeout` (a peer that stops reading is cut off). HTTP/1.1: chunked. HTTP/2: DATA frames with flow
-  control. The task is cancelled when the peer goes, and at the end of a shutdown's grace. HEAD sends the head only.
-- Middleware sees the status and headers at start; `accessLog` records the bytes streamed when it ends.
-- `Content-Length` is not set; `Conditional` does not apply.
+## 8. Streaming responses (as built)
+- `Response.streaming(status:headers:produce:)`: `produce` is `@Sendable (ResponseWriter) async throws -> Void`. The
+  status and headers are fixed when the stream starts. A write returns when the connection has taken the bytes
+  (channel write completion, and for HTTP/2 flow control), so a slow reader slows the producer and memory stays at one
+  write. An empty write is dropped (an empty chunk would end a chunked body).
+- `Limits.maximumStreamDuration` (1 h, up to a day), `maximumStreamBytes` (1 GiB, 1 to 1 TiB), `streamWriteTimeout`
+  (30 s, up to an hour). Validated, nothing clamped. The limits act on the connection, not on the producer's goodwill:
+  a producer that ignores cancellation is cut off all the same.
+- HTTP/1.1: chunks (NIO frames them); a `HEAD` or an HTTP/1.0 client gets the head with HTTP/1.0 framing and a close,
+  because NIO's encoder suppresses a HEAD body only when fed by its own server pipeline, which this transport does not
+  use. A status with no body (204, 304) is an ordinary response; a non-final status is the transport's 500.
+- HTTP/2: `DATA` frames, `END_STREAM` on a clean end; a failing producer resets its stream with `INTERNAL_ERROR`, a
+  limit or a peer that left with `CANCEL`; the connection and other streams are untouched.
+- Every other end (producer error, limit, peer gone, shutdown grace) closes the HTTP/1.1 connection, since nothing
+  else can say the body is incomplete, and cancels the producer.
+- `ResponseStream.observing` wraps a stream to learn its byte count and how it ended; `discard()` tells observers a
+  producer will never run. `accessLog` uses both, so every request is logged exactly once.
+- Server-sent events: `Response.eventStream` and `EventWriter`, strict about line breaks.
 
 ## Out of scope
 Multipart, WebSockets, a template engine, sessions. Authentication stays the server's, as middleware.

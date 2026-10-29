@@ -138,7 +138,7 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 ### Phase 3: Release
 - [ ] 0.1.0: SwiftTLSKit by URL, then the tag, then `ijs-dashboard-server` names it by version
 
-### Next release: 0.4.0, before migration begins
+### Released: 0.4.0 (2026-10-29), before migration begins
 Scope widened by the owner's migration decisions (2026-10-29: D2 streaming, D4 full FleetWatch migration): see
 `DesignProposal_0.4.0.md`, which is also the build order. The list below is the consumer's findings; the proposal
 adds the gaps D4 turns into requirements (forms, assets, redirects and cookies, close-after-response mode).
@@ -146,16 +146,19 @@ Candidates from a consumer's findings (a worker building on the kit, relayed by 
 decision (2026-10-29): these go into a 0.3.1 or a 0.4.0 before migration starts. They add public API, and before 1.0
 this package signals a source break with the minor version, so the working assumption is 0.4.0. Each wants a design
 note before code.
-- [ ] `Request` has no HTTP version, so a handler cannot tell which one carried it. The design said a handler should
+- [x] ~~`Request` has no HTTP version~~, so a handler cannot tell which one carried it. The design said a handler should
   not need to, and it may still not; the question is what a consumer needed it for.
-- [ ] Trusted proxy and the PROXY protocol. `remoteAddress` is the socket address only, so behind a proxy every
+- [x] ~~Trusted proxy and the PROXY protocol~~. `remoteAddress` is the socket address only, so behind a proxy every
   client is the proxy: the rate limiter's default key (documented), and the access log's `remote`. Needs a decision
   on whom to trust, which is a security decision before it is a feature.
-- [ ] A transport refusal hook: the transport's own refusals (`400`, `408`, `413`, `431`) are fixed bodies, and a
+- [x] ~~A transport refusal hook~~: the transport's own refusals (`400`, `408`, `413`, `431`) are fixed bodies, and a
   server that wants them in its own shape or counted has no way in. Also the means to make them indistinguishable
   from the server's other refusals, as the `404`/`405` replacement already allows.
-- [ ] Response streaming. This is migration decision D2.
-- [ ] Per-route limits (a larger body bound for one upload route, a tighter rate for a login route).
+- [x] ~~Response streaming.~~ This is migration decision D2.
+- [x] ~~Per-route limits~~ (a larger body bound for one upload route, a tighter rate for a login route).
+- **All of the above, and the gaps migration decision D4 turned into requirements (forms, assets, redirects and cookies,
+  close-after-response), shipped in 0.4.0 on 2026-10-29.** What is next is migration itself, which waits for its Gate A
+  (`ijs-dashboard-server` running a tagged 0.4.0 for about 3 days: `MigrationPlan_HandRolledServers.md` section 6).
 - Already answered by 0.3.0: the shutdown error (fixed), and an unlogged failed reload (`reloadTLS(onEach:report:)`
   hands the caller every outcome, `.failed` included, with `suggestedLogLevel`).
 
@@ -163,7 +166,7 @@ note before code.
 
 ---
 
-**Last Updated:** 2026-10-29 (migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-10-29 (v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)

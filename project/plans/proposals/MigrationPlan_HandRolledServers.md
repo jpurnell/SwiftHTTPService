@@ -30,17 +30,18 @@ names. That is what the kit exists to remove.
 plaintext-exposure check, and FleetWatch uses it. The kit's transport must use it too and not repeat it
 (the transport worker was redirected to do so on 2026-10-27).
 
-## 3. What the kit lacks for these (decide before migrating)
+## 3. What the kit lacked for these (all built in 0.4.0)
 
-| Gap | Needed by | Options |
+| Gap | Needed by | Resolution |
 |---|---|---|
-| **Streaming responses (SSE)** | SwiftMCPServer for certain; FleetWatch not checked | Add a streaming body to `Response` and the transport; or leave MCP on its own transport |
-| **Tail wildcards** (`/legacy/*`, `/enroll/*`) | FleetWatch | Register explicit routes; or add one deliberate tail-capture segment (`{path...}`) with its own rules. The kit has none on purpose, so it is a design decision, not a patch |
-| **Form bodies** (`application/x-www-form-urlencoded`) | FleetWatch `/authorize` | A strict parser in the core, or the handler parses |
-| **Static assets / HTML helpers** | FleetWatch | `Response.html`, `.javascript`, `.png(data:)` helpers with correct types and `nosniff`; or handlers set headers |
-| **Redirects, cookies** | FleetWatch OAuth/login flow (not read) | Helpers; `Set-Cookie` attributes are easy to get wrong, so a typed builder |
-| **One request per connection** | FleetWatch, Hub | The kit keeps connections alive. Check each client (a phone, a hook script) tolerates that, or add a `Connection: close` mode |
-| **Per-route body limits** | Hub (64 KiB) vs the default | A per-route override on top of the global cap |
+| **Streaming responses (SSE)** | SwiftMCPServer | Built (D2): `Response.streaming`, `Response.eventStream`, bounded by three limits; HTTP/1.1 chunked and HTTP/2 |
+| **Tail wildcards** (`/legacy/*`, `/enroll/*`) | FleetWatch | None needed (D3): every one is a single-segment parameter (`/enroll/{code}`, `/enroll/{code}/qr.png`, `/legacy/{name}`, `/v1/machines/{id}/request-report`) |
+| **Form bodies** | FleetWatch `/authorize` | Built: `Request.form()`, strict |
+| **Static assets / HTML helpers** | FleetWatch | Built: `Response.html/.text/.javascript/.css/.png`, with `nosniff` |
+| **Redirects, cookies** | FleetWatch OAuth/login flow | Built: `Response.redirect` (no open redirects), a typed `Cookie`, `Request.cookies` |
+| **One request per connection** | FleetWatch, Hub | Built: `ServiceConfiguration(connections: .closeAfterResponse)` |
+| **Per-route body limits** | Hub (64 KiB) | Built: `Router.add(..., maximumBodyBytes:)`, wired by `HTTPServer(configuration:router:)` |
+| Behind a proxy | the consumer's findings | Built: trusted proxies, `X-Forwarded-For` read from the right, and the PROXY protocol v1 and v2 |
 
 ## 4. Plans, in order
 
