@@ -233,7 +233,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     /// Answers with a refusal. If the peer is still sending, the stream is then reset with `NO_ERROR`, which
     /// is how RFC 9113 section 8.1 says to tell a peer to stop sending a body that is not wanted.
     private func refuse(_ refusal: Refusal, requestEnded: Bool, context: ChannelHandlerContext) {
-        write(refusal.response, isHead: false, requestEnded: requestEnded, context: context)
+        write(server.response(for: refusal), isHead: false, requestEnded: requestEnded, context: context)
     }
 
     private func write(_ response: Response, isHead: Bool, requestEnded: Bool, context: ChannelHandlerContext) {

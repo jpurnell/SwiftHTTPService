@@ -46,10 +46,12 @@ same handlers are serialised after them.
   The transport sets it; the `Request` initialiser defaults to `.http1_1`, so existing callers and tests compile.
 
 ## 4. Transport refusal hook
-- `ServiceConfiguration.refusal`: a `@Sendable (TransportRefusal) -> Response?` that may replace the body and
-  headers of the transport's own refusals (400, 408, 413, 417, 431, 500) while the status and the connection
-  handling stay the transport's. `TransportRefusal` is a public enum of the kinds, with no peer-supplied value in
-  it. Returning nil keeps the fixed default. An observer `onRefusal` is called for counting. Neither may throw.
+- `HTTPServer.init(configuration:handler:refusals:)` takes `RefusalHooks`: `respond`, a `@Sendable (TransportRefusal)
+  -> Response?` that may replace the body and headers of the transport's own refusals (400, 408, 413, 417, 431,
+  500), and `observe`, called once for each. (Not on `ServiceConfiguration`, as first proposed: that type is
+  `Equatable`, and a closure is not.) The status, the closing of the connection and the headers the transport owns
+  stay the transport's, whatever the hook returns; returning nil keeps the fixed default. `TransportRefusal` is a
+  public enum of the kinds, with no peer-supplied value in it. Neither closure may throw or block.
 
 ## 5. Per-route limits
 - The body bound is known only after the route is, but the transport checks it before it reads a body. So the

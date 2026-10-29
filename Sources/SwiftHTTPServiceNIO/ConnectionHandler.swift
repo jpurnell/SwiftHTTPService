@@ -234,7 +234,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private func refuse(_ refusal: Refusal, context: ChannelHandlerContext) {
         cancelBodyTimer()
         context.triggerUserOutboundEvent(GuardSignal.discard, promise: nil)
-        write(refusal.response, isHead: false, close: true, context: context)
+        write(server.response(for: refusal), isHead: false, close: true, context: context)
     }
 
     private func write(_ response: Response, isHead: Bool, close: Bool, context: ChannelHandlerContext) {
