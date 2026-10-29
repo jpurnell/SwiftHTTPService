@@ -114,6 +114,14 @@ Replacing the transport entirely is a decision for after the kit can stream, and
   change the number. A *fault* is a crash, a hang, a transport-made `4xx` for traffic that should have been served,
   memory or descriptor growth, a failed reload, or a shutdown that overran its grace. The access log (0.3.0) is how
   it is measured. The soaked code must be the code that migrates: 0.4.0, tagged, not the by-path build now running.
+  **Gate A clock started 2026-10-29**, shortly before 23:08 UTC: `ijs-dashboard-server` was rebuilt on Teletran 2 from a
+  plain clone on SwiftHTTPService **0.4.0** (revision `4889e2f`) and restarted (launchd `com.roseclub.ijs-dashboard`, new
+  process 50177; it was running 0.2.0 before). Checked after the restart: the build and `check` pass; the process listens
+  on 9140; an unauthenticated request to `/t/jpurnell/v1/corpora` gets `401 unauthorized` over HTTP/2 and over HTTP/1.1; the
+  audit log records both; the neighbouring jobs read 0. The first `status` poll after the restart was a designed
+  `503 computing` (a cold cache). The three days end about **2026-11-01 23:00 UTC**; the measure is the audit log
+  (`~/ijs-dashboard/logs/audit.log`): any `5xx` other than `computing`, a change of process id, and growth in memory or
+  descriptors. Rollback is `~/ijs-dashboard/ijs-dashboard-server.prev` (the 0.2.0 build).
 - **D2: A, build streaming responses into the kit.** "We should have all of this done." The consequence is that
   SwiftMCPServer's transport can eventually move too (§4.4's "not wholesale" is revisited after streaming ships).
 - **D3: A, explicit routes, no tail wildcard.** Evidence: all four FleetWatch "wildcards" are single-segment
