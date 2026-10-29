@@ -79,9 +79,10 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
 - [x] `ServiceConfiguration` and the transport: HTTP/1.1, limits, timeouts, connection cap, graceful shutdown, TLS through SwiftTLSKit.
 - [x] ~~Rate limiter, request id, access log middleware.~~ Shipped in 0.3.0: `DesignProposal_Middleware.md`; 27 mutations.
 - [x] **Order (owner, 2026-10-28):** v0.1.0 is a milestone, not the finish. Get the kit feature complete first, then
-  migrate the services that can use it. **Feature complete as of 0.3.0** (HTTP/2, the middleware, reload
-  triggers, the shutdown fix); migration is next, and its decisions (below) are the owner's.
-- [ ] Migrate the other hand-rolled servers, after the kit is feature complete and has served real traffic: `project/plans/proposals/MigrationPlan_HandRolledServers.md`.
+  migrate the services that can use it. Feature complete as of 0.3.0 (HTTP/2, the middleware, reload
+  triggers, the shutdown fix); a consumer's findings then added the 0.4.0 items under "Next release" below, which
+  come before migration. Migration's own decisions (below) are the owner's.
+- [ ] Migrate the other hand-rolled servers, after the 0.4.0 items below, and once the kit has served real traffic: `project/plans/proposals/MigrationPlan_HandRolledServers.md`.
   **Real traffic began 2026-10-28:** `ijs-dashboard-server`, deployed on Teletran 2 (port 9140), runs on this kit. The
   plan's decisions are all still open: D1 (how long it must run cleanly before anything migrates, so the clock
   has started but its length is not set), D2 (streaming responses), D3 (tail wildcards) and D4 (whether FleetWatch
@@ -137,9 +138,11 @@ This principle is operationalized in the **Adversarial Review** step of `design_
 ### Phase 3: Release
 - [ ] 0.1.0: SwiftTLSKit by URL, then the tag, then `ijs-dashboard-server` names it by version
 
-### Future
-Candidates from a consumer's findings (a worker building on the kit, relayed by the owner 2026-10-29). Proposals,
-not commitments; each wants a design note before code.
+### Next release: 0.4.0, before migration begins
+Candidates from a consumer's findings (a worker building on the kit, relayed by the owner 2026-10-29). The owner's
+decision (2026-10-29): these go into a 0.3.1 or a 0.4.0 before migration starts. They add public API, and before 1.0
+this package signals a source break with the minor version, so the working assumption is 0.4.0. Each wants a design
+note before code.
 - [ ] `Request` has no HTTP version, so a handler cannot tell which one carried it. The design said a handler should
   not need to, and it may still not; the question is what a consumer needed it for.
 - [ ] Trusted proxy and the PROXY protocol. `remoteAddress` is the socket address only, so behind a proxy every
