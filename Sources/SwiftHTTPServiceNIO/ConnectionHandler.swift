@@ -237,10 +237,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         _ result: Result<Response, any Error>, isHead: Bool, version: HTTPProtocolVersion, context: ChannelHandlerContext
     ) {
         inFlight = nil
-        guard context.channel.isActive else {
-            if case .success(let response) = result { response.stream?.discard() }     // never sent: it will not run
-            return
-        }
+        guard context.channel.isActive else { return }
         switch ResponseRules.outcome(of: result) {
         case .success(let response):
             if let stream = response.stream {
@@ -335,12 +332,11 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         // The stream's whole life is bounded: past the duration it is cut off, whether the producer is writing or idle.
         streamTimer = context.eventLoop.scheduleTask(in: server.configuration.limits.maximumStreamDuration.timeAmount) {
             session.end(.durationLimit)
-            task.cancel()
-            loopContext.value.close(promise: nil)
+            loopContext.value.close(promise: nil)             // closing cancels the producer (see channelInactive)
         }
         Task {
             // A producer that threw ends the stream with the reason it gave (a StreamError), or as closed.
-            if case .failure(let failure) = await task.result { session.end((failure as? StreamError) ?? .closed) }
+            if case .failure = await task.result { session.end(.closed) }     // the first reason stays: a limit's is kept
             // The channel may have closed, and the loop stopped with it, while the producer ran.
             guard liveness.isOpen else { return }
             eventLoop.execute {
@@ -452,7 +448,6 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         liveness.close()
         streamTimer?.cancel()
         streamTimer = nil
-        streamSession?.end(.closed)
         streamTask?.cancel()
         streamTask = nil
         streamSession = nil

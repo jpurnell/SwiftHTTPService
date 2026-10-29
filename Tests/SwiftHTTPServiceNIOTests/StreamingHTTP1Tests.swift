@@ -2,6 +2,7 @@ import Foundation
 import HTTPTypes
 import NIOConcurrencyHelpers
 import NIOCore
+import NIOEmbedded
 import NIOPosix
 import SwiftHTTPService
 import Testing
@@ -46,6 +47,35 @@ extension RawClient {
             try await Task.sleep(for: .milliseconds(5))
         }
         return condition(self)
+    }
+}
+
+/// The state of one stream, without a connection around it.
+@Suite("Stream session")
+struct StreamSessionTests {
+    @Test("The first reason a stream ended for is the one that stays, and only the call that ended it is told so")
+    func firstReasonStays() {
+        let channel = EmbeddedChannel()
+        let session = StreamSession(channel: channel, limits: Limits()) { _ in channel.eventLoop.makeSucceededVoidFuture() }
+        #expect(session.reason == nil)
+        #expect(session.end(.durationLimit) == true)
+        #expect(session.end(.closed) == false)
+        #expect(session.end(.byteLimit) == false)
+        #expect(session.reason == .durationLimit)
+    }
+
+    @Test("A write is refused with the reason once the stream has ended, and sends nothing")
+    func writesAfterTheEnd() async throws {
+        let channel = EmbeddedChannel()
+        let sent = NIOLockedValueBox(0)
+        let session = StreamSession(channel: channel, limits: Limits()) { _ in
+            sent.withLockedValue { $0 += 1 }
+            return channel.eventLoop.makeSucceededVoidFuture()
+        }
+        try await session.write(Data("ok".utf8))
+        session.end(.writeTimeout)
+        await #expect(throws: StreamError.writeTimeout) { try await session.write(Data("late".utf8)) }
+        #expect(sent.withLockedValue { $0 } == 1)
     }
 }
 
@@ -152,6 +182,29 @@ struct StreamingHTTP1Tests {
         let body = ChunkedBody(try #require(client.splitResponse).body)
         #expect(body.chunks.count == 80)
         #expect(body.chunks.allSatisfy { $0 == chunk })
+        await client.close()
+        try await group.shutdownGracefully()
+        await server.shutdown()
+    }
+
+    @Test("A writer kept past the end of its stream refuses further writes with closed, and sends nothing")
+    func lateWrites() async throws {
+        let kept = NIOLockedValueBox<ResponseWriter?>(nil)
+        let (server, address) = try await start { _ in
+            .streaming(status: .ok) { writer in
+                kept.withLockedValue { $0 = writer }
+                try await writer.write(Data("x".utf8))
+            }
+        }
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let client = try await RawClient.connect(to: address, group: group)
+        try await client.send(get)
+        #expect(try await client.wait { ChunkedBody($0.splitResponse?.body ?? Data()).complete })
+        let before = client.received.count
+        let writer = try #require(kept.withLockedValue { $0 })
+        await #expect(throws: StreamError.closed) { try await writer.write(Data("late".utf8)) }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(client.received.count == before)               // nothing went out after the terminator
         await client.close()
         try await group.shutdownGracefully()
         await server.shutdown()
@@ -354,6 +407,53 @@ struct StreamingHTTP1Tests {
         let deadline = ContinuousClock.now + .seconds(3)
         while !cancelled.withLockedValue({ $0 }), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
         #expect(cancelled.withLockedValue { $0 })
+        await client.close()
+        try await group.shutdownGracefully()
+        await server.shutdown()
+    }
+
+    @Test("A producer that ignores the error from a limit and hangs is cut off all the same: the connection closes without its help")
+    func hungProducerIsCutOff() async throws {
+        var limits = Limits()
+        limits.maximumStreamBytes = 4
+        let hang = HoldGate()
+        let (server, address) = try await start(limits: limits) { _ in
+            .streaming(status: .ok) { writer in
+                try? await writer.write(Data("toolong".utf8))            // refused: over the byte limit
+                await hang.wait()                                         // and the producer carries on, deaf to everything
+            }
+        }
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let client = try await RawClient.connect(to: address, group: group)
+        try await client.send(get)
+        #expect(try await client.waitUntilClosed(timeout: .seconds(3)))
+        await hang.release()
+        await client.close()
+        try await group.shutdownGracefully()
+        await server.shutdown()
+    }
+
+    @Test("A stream past its duration is cut off even if its producer never looks at cancellation, and the producer's next write says durationLimit")
+    func durationCutsOffADeafProducer() async throws {
+        var limits = Limits()
+        limits.maximumStreamDuration = .milliseconds(300)
+        let hang = HoldGate()
+        let seen = NIOLockedValueBox<StreamError?>(nil)
+        let (server, address) = try await start(limits: limits) { _ in
+            .streaming(status: .ok) { writer in
+                try await writer.write(Data("start".utf8))
+                await hang.wait()                                         // deaf: not cancelled by closing the connection
+                do { try await writer.write(Data("after".utf8)) } catch let failure as StreamError { seen.withLockedValue { $0 = failure } }
+            }
+        }
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let client = try await RawClient.connect(to: address, group: group)
+        try await client.send(get)
+        #expect(try await client.waitUntilClosed(timeout: .seconds(3)))
+        await hang.release()
+        let deadline = ContinuousClock.now + .seconds(3)
+        while seen.withLockedValue({ $0 }) == nil, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(seen.withLockedValue { $0 } == .durationLimit)
         await client.close()
         try await group.shutdownGracefully()
         await server.shutdown()

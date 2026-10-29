@@ -62,6 +62,7 @@ struct EventStreamTests {
     static let refused: [Bad] = [
         Bad(name: "an event name with a line feed", send: { try await $0.send(data: "x", event: "a\nb") }),
         Bad(name: "an event name with a carriage return", send: { try await $0.send(data: "x", event: "a\rb") }),
+        Bad(name: "an event name with a NUL", send: { try await $0.send(data: "x", event: "a\u{0}b") }),
         Bad(name: "an empty event name", send: { try await $0.send(data: "x", event: "") }),
         Bad(name: "an id with a line feed", send: { try await $0.send(data: "x", id: "a\nb") }),
         Bad(name: "an id with a carriage return", send: { try await $0.send(data: "x", id: "a\rb") }),

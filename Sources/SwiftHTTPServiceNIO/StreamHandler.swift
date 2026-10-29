@@ -236,10 +236,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
 
     private func completed(_ result: Result<Response, any Error>, isHead: Bool, context: ChannelHandlerContext) {
         inFlight = nil
-        guard context.channel.isActive else {
-            if case .success(let response) = result { response.stream?.discard() }     // never sent: it will not run
-            return
-        }
+        guard context.channel.isActive else { return }
         switch ResponseRules.outcome(of: result) {
         case .success(let response):
             if let stream = response.stream {
@@ -335,18 +332,18 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         // The stream's whole life is bounded: past the duration it is cut off, whether the producer is writing or idle.
         streamTimer = context.eventLoop.scheduleTask(in: server.configuration.limits.maximumStreamDuration.timeAmount) {
             session.end(.durationLimit)
-            task.cancel()
-            loopContext.value.close(promise: nil)
+            loopContext.value.close(promise: nil)             // closing cancels the producer (see channelInactive)
         }
         Task {
-            var producerFailed = false
-            if case .failure(let failure) = await task.result {
-                producerFailed = !(failure is StreamError) && !(failure is CancellationError)
-                session.end((failure as? StreamError) ?? .closed)
+            let failed: Bool
+            if case .failure = await task.result {
+                session.end(.closed)                           // the first reason stays: a limit's is kept
+                failed = true
+            } else {
+                failed = false
             }
             // The stream may have closed, and the loop stopped with it, while the producer ran.
             guard liveness.isOpen else { return }
-            let failed = producerFailed
             eventLoop.execute {
                 loopSelf.value.streamEnded(clean: session.reason == nil, producerFailed: failed, context: loopContext.value)
             }
@@ -365,9 +362,11 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         if clean {
             context.writeAndFlush(wrapOutboundOut(.data(.init(data: .byteBuffer(ByteBuffer()), endStream: true))), promise: nil)
         } else if producerFailed {
+            // The producer threw while the stream was still open. (A limit, or a peer that left, has already closed
+            // the stream, which is why the guard above returned.)
             context.writeAndFlush(wrapOutboundOut(.rstStream(.internalError)), promise: nil)
         } else {
-            context.close(promise: nil)                  // a limit, or a peer that left: the stream is cancelled
+            context.close(promise: nil)
         }
     }
 
@@ -388,7 +387,6 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         liveness.close()
         streamTimer?.cancel()
         streamTimer = nil
-        streamSession?.end(.closed)
         streamTask?.cancel()
         streamTask = nil
         streamSession = nil

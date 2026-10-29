@@ -65,11 +65,8 @@ final class StreamSession: Sendable {
             timer.cancel()
         } catch {
             timer.cancel()
-            end(.closed)                      // a write that failed with no earlier reason: the connection went away
-            throw reason ?? .closed
+            throw reason ?? .closed           // a write that failed with no earlier reason: the connection went away
         }
-        // A limit may have ended the stream while the write was in flight.
-        if let reason { throw reason }
     }
 
     /// Whether `count` more bytes may be written; if not, the stream ends and the connection is closed.

@@ -104,4 +104,22 @@ struct ResponseStreamTests {
         #expect(Set(all.map(\.description)).count == 4)
         #expect(StreamError.closed.description == "the connection is closed")
     }
+
+    @Test("Observing twice tells both observers when a stream is discarded, once each")
+    func discardReachesEveryObserver() async throws {
+        actor Count {
+            var inner = 0, outer = 0
+            func innerHeard() { inner += 1 }
+            func outerHeard() { outer += 1 }
+        }
+        let count = Count()
+        let base = try #require(Response.streaming(status: .ok) { _ in }.stream)
+        let wrapped = base
+            .observing { bytes, _ in Task { await count.innerHeard(); #expect(bytes == 0) } }
+            .observing { bytes, _ in Task { await count.outerHeard(); #expect(bytes == 0) } }
+        wrapped.discard()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await count.inner == 1)
+        #expect(await count.outer == 1)
+    }
 }

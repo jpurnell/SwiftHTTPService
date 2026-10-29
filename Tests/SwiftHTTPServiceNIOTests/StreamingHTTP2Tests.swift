@@ -223,6 +223,53 @@ struct StreamingHTTP2Tests {
         }
     }
 
+    @Test("A stream past its duration is reset even if its producer never looks at cancellation, and one past the byte limit with a hung producer too")
+    func deafProducersAreCutOff() async throws {
+        var limits = Limits()
+        limits.maximumStreamDuration = .milliseconds(300)
+        limits.maximumStreamBytes = 4
+        let hang = HoldGate()
+        try await withServer(limits: limits, handler: { request in
+            .streaming(status: .ok) { writer in
+                if request.path == "/bytes" { try? await writer.write(Data("toolong".utf8)) } else { try await writer.write(Data("ok".utf8)) }
+                await hang.wait()
+            }
+        }) { _, address, material, group in
+            let client = try await connect(address, material, group)
+            let duration = try await client.open("GET", "/duration")
+            #expect(try await duration.wait(timeout: .seconds(3)) { $0.resetCode == 8 })
+            let bytes = try await client.open("GET", "/bytes")
+            #expect(try await bytes.wait(timeout: .seconds(3)) { $0.resetCode == 8 })
+            #expect(client.channel.isActive)
+            await hang.release()
+            await client.close()
+        }
+    }
+
+    @Test("The producer of a stream cut off at its duration is told durationLimit by its next write")
+    func durationReason() async throws {
+        var limits = Limits()
+        limits.maximumStreamDuration = .milliseconds(300)
+        let hang = HoldGate()
+        let seen = NIOLockedValueBox<StreamError?>(nil)
+        try await withServer(limits: limits, handler: { _ in
+            .streaming(status: .ok) { writer in
+                try await writer.write(Data("start".utf8))
+                await hang.wait()
+                do { try await writer.write(Data("after".utf8)) } catch let failure as StreamError { seen.withLockedValue { $0 = failure } }
+            }
+        }) { _, address, material, group in
+            let client = try await connect(address, material, group)
+            let stream = try await client.open("GET", "/x")
+            #expect(try await stream.wait(timeout: .seconds(3)) { $0.resetCode == 8 })
+            await hang.release()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while seen.withLockedValue({ $0 }) == nil, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(seen.withLockedValue { $0 } == .durationLimit)
+            await client.close()
+        }
+    }
+
     @Test("A client that does not read holds back its stream by flow control, and the write that cannot finish times out")
     func writeTimeout() async throws {
         var limits = Limits()
