@@ -58,10 +58,17 @@ public struct ResponseStream: Sendable, Equatable {
     private let identity = UUID()
     /// Writes the body to `writer`, then returns. Throwing ends the response abruptly.
     public let produce: @Sendable (ResponseWriter) async throws -> Void
+    private let discarded: @Sendable () -> Void
 
-    init(_ produce: @escaping @Sendable (ResponseWriter) async throws -> Void) {
+    init(_ produce: @escaping @Sendable (ResponseWriter) async throws -> Void, discarded: @escaping @Sendable () -> Void = {}) {
         self.produce = produce
+        self.discarded = discarded
     }
+
+    /// Tells the stream its producer will never run: the transport calls this for a `HEAD`, for a status that has no
+    /// body, and when the connection has gone before the response could be sent. A layer that wants to know when a
+    /// stream ended (see ``observing(_:)``) hears of it here, since ``produce`` will not report it.
+    public func discard() { discarded() }
 
     /// Whether two values are the same stream: equal only if one was made from the other by copying.
     public static func == (lhs: ResponseStream, rhs: ResponseStream) -> Bool { lhs.identity == rhs.identity }
@@ -71,7 +78,8 @@ public struct ResponseStream: Sendable, Equatable {
     /// such as an access log. It is a different stream from this one.
     public func observing(_ finished: @escaping @Sendable (Int, (any Error)?) -> Void) -> ResponseStream {
         let original = produce
-        return ResponseStream { writer in
+        let originalDiscarded = discarded
+        return ResponseStream({ writer in
             let counter = ByteCounter()
             let counting = ResponseWriter { data in
                 counter.add(data.count)
@@ -84,7 +92,10 @@ public struct ResponseStream: Sendable, Equatable {
                 throw error
             }
             finished(counter.total, nil)
-        }
+        }, discarded: {
+            originalDiscarded()
+            finished(0, nil)
+        })
     }
 }
 

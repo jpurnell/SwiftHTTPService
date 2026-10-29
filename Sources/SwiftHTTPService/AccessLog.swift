@@ -109,19 +109,28 @@ public func accessLog(
     let now = now ?? { processStart.duration(to: ContinuousClock.now) }
     return { request, next in
         let started = now()
-        func entry(status: Int, bytes: Int, id: String?) -> AccessLogEntry {
-            AccessLogEntry(
+        let record: @Sendable (Int, Int, String?) -> Void = { status, bytes, id in
+            sink(AccessLogEntry(
                 method: request.method.rawValue, path: request.path, status: status, responseBytes: bytes,
-                duration: now() - started, requestID: request.context[RequestID.self] ?? id, remoteAddress: request.remoteAddress)
+                duration: now() - started, requestID: request.context[RequestID.self] ?? id, remoteAddress: request.remoteAddress))
         }
         let response: Response
         do {
             response = try await next(request)
         } catch {
-            sink(entry(status: 500, bytes: 0, id: nil))
+            record(500, 0, nil)
             throw error
         }
-        sink(entry(status: response.status.code, bytes: response.body.count, id: response.headers[requestIDHeader]))
-        return response
+        guard let stream = response.stream else {
+            record(response.status.code, response.body.count, response.headers[requestIDHeader])
+            return response
+        }
+        // A streaming response's bytes are not known until it ends, so it is logged then: with the status it began
+        // with, the bytes streamed, and the time to the end. A stream that is discarded (HEAD) is logged as it stands.
+        let status = response.status.code
+        let id = response.headers[requestIDHeader]
+        var observed = response
+        observed.stream = stream.observing { bytes, _ in record(status, bytes, id) }
+        return observed
     }
 }

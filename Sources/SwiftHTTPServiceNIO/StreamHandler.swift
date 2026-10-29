@@ -221,8 +221,12 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         let liveness = self.liveness
         Task {
             let result = await task.result
-            // The channel may have closed, and the loop stopped with it, while the handler ran.
-            guard liveness.isOpen else { return }
+            // The channel may have closed, and the loop stopped with it, while the handler ran. A stream it
+            // returned will never run, and whoever is waiting to hear how it ended is told.
+            guard liveness.isOpen else {
+                if case .success(let response) = result { response.stream?.discard() }
+                return
+            }
             // Back onto the stream's loop before touching the context or the handler.
             eventLoop.execute {
                 loopSelf.value.completed(result, isHead: isHead, context: loopContext.value)
@@ -232,7 +236,10 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
 
     private func completed(_ result: Result<Response, any Error>, isHead: Bool, context: ChannelHandlerContext) {
         inFlight = nil
-        guard context.channel.isActive else { return }
+        guard context.channel.isActive else {
+            if case .success(let response) = result { response.stream?.discard() }     // never sent: it will not run
+            return
+        }
         switch ResponseRules.outcome(of: result) {
         case .success(let response):
             if let stream = response.stream {
@@ -240,7 +247,9 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
             } else {
                 write(response, isHead: isHead, requestEnded: true, context: context)
             }
-        case .failure(let refusal): refuse(refusal, requestEnded: true, context: context)
+        case .failure(let refusal):
+            if case .success(let response) = result { response.stream?.discard() }     // a status that cannot be sent
+            refuse(refusal, requestEnded: true, context: context)
         }
     }
 
@@ -295,6 +304,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         let prepared = ResponseRules.prepare(response)
         guard prepared.hasBody else {
             // A status that has no body (204, 304) has nothing to stream: it is an ordinary bodyless response.
+            stream.discard()
             write(Response(status: response.status, headers: response.headers), isHead: isHead, requestEnded: true, context: context)
             return
         }
@@ -304,6 +314,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         for field in prepared.fields { block.add(name: field.name.rawName.lowercased(), value: field.value) }
         block.add(name: "date", value: HTTPDate.string(for: Date()))
         guard !isHead else {
+            stream.discard()
             state = .done
             context.writeAndFlush(wrapOutboundOut(.headers(.init(headers: block, endStream: true))), promise: nil)
             return
