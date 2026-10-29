@@ -73,6 +73,14 @@ public struct Limits: Sendable, Equatable {
     /// The most HTTP/2 streams a peer may have open on one connection at once. 1 to 1000. Default 100,
     /// the minimum RFC 9113 suggests; it is a recommendation and not a measurement. Ignored for HTTP/1.1.
     public var maximumConcurrentStreams: Int
+    /// The longest a streaming response may run, from its first byte to its last. Above zero, at most a day.
+    /// Default one hour. Long-lived streams (server-sent events) end here and are expected to reconnect.
+    public var maximumStreamDuration: Duration
+    /// The most bytes a streaming response may write, 1 to a tebibyte (1 << 40). Default 1 GiB.
+    public var maximumStreamBytes: Int
+    /// How long a single write of a streaming response may wait for the peer to read before the stream is ended:
+    /// above zero, at most an hour. Default 30 s. A peer that stops reading cannot hold a stream open.
+    public var streamWriteTimeout: Duration
 
     /// Creates limits; anything not given is the default.
     public init(
@@ -84,7 +92,10 @@ public struct Limits: Sendable, Equatable {
         idleTimeout: Duration = .seconds(60),
         maximumConnections: Int = 256,
         shutdownGrace: Duration = .seconds(10),
-        maximumConcurrentStreams: Int = 100
+        maximumConcurrentStreams: Int = 100,
+        maximumStreamDuration: Duration = .seconds(3600),
+        maximumStreamBytes: Int = 1 << 30,
+        streamWriteTimeout: Duration = .seconds(30)
     ) {
         self.maximumHeaderBytes = maximumHeaderBytes
         self.maximumHeaderCount = maximumHeaderCount
@@ -95,6 +106,9 @@ public struct Limits: Sendable, Equatable {
         self.maximumConnections = maximumConnections
         self.shutdownGrace = shutdownGrace
         self.maximumConcurrentStreams = maximumConcurrentStreams
+        self.maximumStreamDuration = maximumStreamDuration
+        self.maximumStreamBytes = maximumStreamBytes
+        self.streamWriteTimeout = streamWriteTimeout
     }
 }
 
@@ -215,6 +229,9 @@ public struct ServiceConfiguration: Sendable, Equatable {
         try require(limits.idleTimeout > .zero && limits.idleTimeout <= hour, "limits.idleTimeout")
         try require((1...100_000).contains(limits.maximumConnections), "limits.maximumConnections")
         try require((1...1000).contains(limits.maximumConcurrentStreams), "limits.maximumConcurrentStreams")
+        try require(limits.maximumStreamDuration > .zero && limits.maximumStreamDuration <= .seconds(86_400), "limits.maximumStreamDuration")
+        try require((1...(1 << 40)).contains(limits.maximumStreamBytes), "limits.maximumStreamBytes")
+        try require(limits.streamWriteTimeout > .zero && limits.streamWriteTimeout <= hour, "limits.streamWriteTimeout")
         try require(limits.shutdownGrace >= .zero && limits.shutdownGrace <= .seconds(600), "limits.shutdownGrace")
     }
 
