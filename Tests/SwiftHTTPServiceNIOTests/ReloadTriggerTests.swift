@@ -71,10 +71,20 @@ struct ReloadTriggerTests {
 
     @Test("A SIGHUP to the process is one element of the hangup stream, and does not end the process")
     func hangupYields() async throws {
+        try await waitForNoHangupStreams()
         let stream = TLSReloadTrigger.hangup()
         try await Task.sleep(for: .milliseconds(100))            // the signal source is installed
         kill(getpid(), SIGHUP)
         #expect(await firstElement(of: stream, within: .seconds(3)))
+    }                                                                           // the stream ends when `stream` goes out of scope; the next test waits for that
+
+    /// Waits until no hangup stream is open. A stream ends a moment after its consumer is cancelled, and a test that
+    /// changes `SIGHUP`'s disposition, or signals the process, must not do so while an earlier test's stream is still
+    /// registered: the shared source would then not be reinstalled, and the signal would end the test process.
+    private func waitForNoHangupStreams() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while HangupBroadcaster.shared.listenerCount > 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(HangupBroadcaster.shared.listenerCount == 0)
     }
 
     /// What `SIGHUP` is set to now, as a number, read without changing it.
@@ -90,6 +100,7 @@ struct ReloadTriggerTests {
 
     @Test("While the stream lives SIGHUP is ignored; when it ends SIGHUP goes back to what it was")
     func hangupRestores() async throws {
+        try await waitForNoHangupStreams()
         let ignored = unsafeBitCast(SIG_IGN, to: Int.self)
         let standard = unsafeBitCast(SIG_DFL, to: Int.self)
         signal(SIGHUP, SIG_DFL)                                  // the starting disposition: the default
@@ -107,6 +118,98 @@ struct ReloadTriggerTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(after == standard, "left installed: \(after)")
+    }
+
+    @Test("Two hangup streams at once both hear a SIGHUP; ending one leaves SIGHUP ignored for the other, not at its default")
+    func overlappingHangups() async throws {
+        try await waitForNoHangupStreams()
+        let ignored = unsafeBitCast(SIG_IGN, to: Int.self)
+        let standard = unsafeBitCast(SIG_DFL, to: Int.self)
+        signal(SIGHUP, SIG_DFL)
+        let first = TLSReloadTrigger.hangup()
+        let second = TLSReloadTrigger.hangup()
+        let firstHeard = NIOLockedValueBox(0)
+        let secondHeard = NIOLockedValueBox(0)
+        let firstTask = Task { for await _ in first { firstHeard.withLockedValue { $0 += 1 } } }
+        let secondTask = Task { for await _ in second { secondHeard.withLockedValue { $0 += 1 } } }
+        try await Task.sleep(for: .milliseconds(150))
+        kill(getpid(), SIGHUP)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while (firstHeard.withLockedValue { $0 } == 0 || secondHeard.withLockedValue { $0 } == 0), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(firstHeard.withLockedValue { $0 } == 1)                      // one signal, heard once by each
+        #expect(secondHeard.withLockedValue { $0 } == 1)
+        // The first stream ends. The second is still listening, so SIGHUP must still be ignored by the process.
+        firstTask.cancel()
+        await firstTask.value
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(hangupDisposition() == ignored)
+        kill(getpid(), SIGHUP)                                              // would end the process if the default were back
+        let again = ContinuousClock.now + .seconds(3)
+        while secondHeard.withLockedValue({ $0 }) < 2, ContinuousClock.now < again { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(secondHeard.withLockedValue { $0 } == 2)
+        #expect(firstHeard.withLockedValue { $0 } == 1)                      // and the ended stream hears nothing more
+        // Only when the last stream ends does SIGHUP go back to what it was.
+        secondTask.cancel()
+        await secondTask.value
+        var after = -1
+        for _ in 0..<100 {
+            after = hangupDisposition()
+            if after == standard { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(after == standard, "left installed: \(after)")
+    }
+
+    @Test("A process that had SIGHUP ignored (run under nohup) is left with it ignored when its streams end")
+    func nohupIsKept() async throws {
+        try await waitForNoHangupStreams()
+        let ignored = unsafeBitCast(SIG_IGN, to: Int.self)
+        signal(SIGHUP, SIG_IGN)
+        defer { signal(SIGHUP, SIG_DFL) }
+        let first = TLSReloadTrigger.hangup()
+        let second = TLSReloadTrigger.hangup()
+        let tasks = [Task { for await _ in first {} }, Task { for await _ in second {} }]
+        try await Task.sleep(for: .milliseconds(100))
+        for task in tasks { task.cancel() }
+        for task in tasks { await task.value }
+        try await waitForNoHangupStreams()                                      // the streams have ended: the answer below means something
+        var after = -1
+        for _ in 0..<100 {
+            after = hangupDisposition()
+            if after == ignored { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(after == ignored)
+        kill(getpid(), SIGHUP)                                                  // and a signal still does not end the process
+        try await Task.sleep(for: .milliseconds(100))
+    }
+
+    @Test("A hangup stream started after another has ended works, and restores what it found")
+    func successiveHangups() async throws {
+        let standard = unsafeBitCast(SIG_DFL, to: Int.self)
+        for _ in 0..<3 {
+            try await waitForNoHangupStreams()
+            signal(SIGHUP, SIG_DFL)
+            let stream = TLSReloadTrigger.hangup()
+            let heard = NIOLockedValueBox(0)
+            let task = Task { for await _ in stream { heard.withLockedValue { $0 += 1 } } }
+            try await Task.sleep(for: .milliseconds(100))
+            kill(getpid(), SIGHUP)
+            let deadline = ContinuousClock.now + .seconds(3)
+            while heard.withLockedValue({ $0 }) == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(heard.withLockedValue { $0 } == 1)
+            task.cancel()
+            await task.value
+            var after = -1
+            for _ in 0..<100 {
+                after = hangupDisposition()
+                if after == standard { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(after == standard)
+        }
     }
 
     // MARK: The server loop

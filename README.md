@@ -93,7 +93,8 @@ is a fixed `application/problem+json` body that never repeats anything the peer 
 `.proxyProtocol` (version 1 or 2, read before TLS: required from a trusted peer, refused from anyone else who
 begins with one). Forwarded information is believed only from a trusted peer. `ServiceConfiguration(connections:)`
 can ask for `.closeAfterResponse`, for clients that cannot reuse a connection. `HTTPServer(refusals:)` gives the
-transport's own refusals a body of the server's choosing (the status stays the transport's), and
+transport's own refusals a body of the server's choosing (the status stays the transport's), and a record of each one (who
+asked and, when it was read, the request line, escaped and cut short) for the log, and
 `HTTPServer(configuration:router:)` wires each route's own body bound to the transport.
 
 **Not supported, on purpose:** pipelining (the first request is answered with `Connection: close` and the second

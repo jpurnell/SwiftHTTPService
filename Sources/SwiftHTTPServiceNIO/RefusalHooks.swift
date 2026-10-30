@@ -60,9 +60,76 @@ public enum TransportRefusal: Sendable, Equatable, CaseIterable, CustomStringCon
     }
 }
 
+/// What the transport knows about a refusal: who asked and, when the request line had been read, what for.
+///
+/// The request line comes from a stranger and is going to be written to a log, so it is made safe first: the method
+/// is shown only if it is a token of at most 32 characters, and the target has every byte outside visible ASCII
+/// written as `%XX` (so it cannot end a line or carry a control sequence) and is cut at 512 characters, marked
+/// `...`. Nothing here is ever sent back to the peer.
+public struct RefusalRecord: Sendable, Equatable {
+    /// What was refused.
+    public let kind: TransportRefusal
+    /// The socket's peer, if the transport knows it.
+    public let peerAddress: String?
+    /// The client, as a trusted proxy reported it (see ``ServiceConfiguration/Forwarding``): the peer if none did.
+    public let remoteAddress: String?
+    /// The request method, if the request line had been read.
+    public let method: String?
+    /// The request target, escaped and cut short, if the request line had been read.
+    public let target: String?
+    /// The version of HTTP, if it is known.
+    public let httpVersion: HTTPProtocolVersion?
+
+    init(
+        kind: TransportRefusal, peerAddress: String?, remoteAddress: String?, method: String?, target: String?,
+        httpVersion: HTTPProtocolVersion?
+    ) {
+        self.kind = kind
+        self.peerAddress = peerAddress
+        self.remoteAddress = remoteAddress
+        self.method = method
+        self.target = target
+        self.httpVersion = httpVersion
+    }
+
+    /// The longest target shown, in characters, before the `...` that marks a cut.
+    static let maximumTargetCharacters = 512
+
+    /// The text of a request target: visible ASCII (0x21 to 0x7E) as written, every other byte as `%XX`.
+    static func text(ofTarget bytes: [UInt8]) -> String {
+        var out = String.UnicodeScalarView()
+        var count = 0
+        let digits = Array("0123456789ABCDEF".unicodeScalars)
+        for byte in bytes {
+            if byte >= 0x21 && byte <= 0x7E {
+                out.append(Unicode.Scalar(byte))
+                count += 1
+            } else {
+                out.append("%")
+                out.append(digits[Int(byte >> 4)])
+                out.append(digits[Int(byte & 0x0F)])
+                count += 3
+            }
+            if count > maximumTargetCharacters { break }
+        }
+        let text = String(out)
+        guard text.unicodeScalars.count > maximumTargetCharacters else { return text }
+        return String(String.UnicodeScalarView(text.unicodeScalars.prefix(maximumTargetCharacters))) + "..."
+    }
+
+    /// The text of a method: an RFC 9110 token of 1 to 32 characters, or nil.
+    static func text(ofMethod bytes: [UInt8]) -> String? {
+        let allowed = Set("!#$%&'*+-.^_`|~".utf8)
+        guard (1...32).contains(bytes.count), bytes.allSatisfy({
+            ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x5A) || ($0 >= 0x61 && $0 <= 0x7A) || allowed.contains($0)
+        }) else { return nil }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+}
+
 /// What a server does about the transport's own refusals.
 ///
-/// Both closures run on the connection's event loop, so they must be quick and must not block. Neither can throw.
+/// The closures run on the connection's event loop, so they must be quick and must not block. None can throw.
 /// The status of a refusal, the closing of the connection and the headers the transport owns (`Content-Length`,
 /// `Date`, `Connection`) stay the transport's: a hook that could change them could turn the refusal of a
 /// smuggling attempt into a `200`.
@@ -70,14 +137,19 @@ public struct RefusalHooks: Sendable {
     /// Gives a refusal its body and headers. Return nil to keep the fixed default. Any status in the response is
     /// ignored; the refusal's own is used.
     public let respond: (@Sendable (TransportRefusal) -> Response?)?
-    /// Called once for each refusal, before it is written, for counting and logging.
+    /// Called once for each refusal, before it is written, for counting.
     public let observe: (@Sendable (TransportRefusal) -> Void)?
+    /// Called once for each refusal, before it is written, with who asked and what for: the place to write the log
+    /// line for a request the transport refused before any handler or middleware saw it.
+    public let record: (@Sendable (RefusalRecord) -> Void)?
 
-    /// Creates hooks; with neither, the transport's fixed refusals are unchanged.
+    /// Creates hooks; with none, the transport's fixed refusals are unchanged.
     public init(
-        respond: (@Sendable (TransportRefusal) -> Response?)? = nil, observe: (@Sendable (TransportRefusal) -> Void)? = nil
+        respond: (@Sendable (TransportRefusal) -> Response?)? = nil, observe: (@Sendable (TransportRefusal) -> Void)? = nil,
+        record: (@Sendable (RefusalRecord) -> Void)? = nil
     ) {
         self.respond = respond
         self.observe = observe
+        self.record = record
     }
 }

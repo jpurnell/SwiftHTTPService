@@ -1,5 +1,6 @@
 import Foundation
 import HTTPTypes
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOEmbedded
 import NIOExtras
@@ -17,12 +18,17 @@ import SwiftHTTPService
 @Suite("Connection handler, without the parser")
 struct DirectHandlerTests {
 
-    private func harness(limits: Limits = Limits(), handler: @escaping Handler = ok()) async throws -> (NIOAsyncTestingChannel, Recorder) {
+    private func harness(
+        limits: Limits = Limits(), refusals: RefusalHooks = RefusalHooks(), handler: @escaping Handler = ok()
+    ) async throws -> (NIOAsyncTestingChannel, Recorder) {
         let recorder = Recorder()
-        let context = ServerContext(configuration: try ServiceConfiguration(port: 0, limits: limits)) { request in
-            await recorder.record(request)
-            return try await handler(request)
-        }
+        let context = ServerContext(
+            configuration: try ServiceConfiguration(port: 0, limits: limits),
+            handler: { request in
+                await recorder.record(request)
+                return try await handler(request)
+            },
+            refusals: refusals)
         let channel = NIOAsyncTestingChannel()
         try await channel.eventLoop.submit {
             let operations = channel.pipeline.syncOperations
@@ -31,6 +37,32 @@ struct DirectHandlerTests {
         }.get()
         try await channel.connect(to: SocketAddress(ipAddress: "192.0.2.9", port: 1))
         return (channel, recorder)
+    }
+
+    @Test("A refusal's record shows the request line safely even when the parser, which would stop it, is not there to")
+    func recordsAreEscapedWithoutTheParser() async throws {
+        let seen = NIOLockedValueBox<[RefusalRecord]>([])
+        let hooks = RefusalHooks(record: { record in seen.withLockedValue { $0.append(record) } })
+        // An unsafe target: a line break, a header-looking line, DEL and a non-ASCII character.
+        let (channel, _) = try await harness(refusals: hooks)
+        try await channel.writeInbound(head([("Host", "h")], method: .GET, uri: "//x\r\nInjected: 1\u{7F}\u{E9}"))
+        try await channel.writeInbound(HTTPServerRequestPart.end(nil))
+        _ = try await status(of: channel)
+        let record = try #require(seen.withLockedValue { $0 }.first)
+        #expect(record.kind == .malformedTarget)
+        #expect(record.target == "//x%0D%0AInjected:%201%7F%C3%A9")
+        #expect(record.method == "GET")
+        #expect(record.peerAddress == "192.0.2.9")
+        // An unsafe method is not shown at all.
+        let (other, _) = try await harness(refusals: hooks)
+        try await other.writeInbound(head([("Host", "h")], method: .RAW(value: "G\r\nET"), uri: "/x"))
+        try await other.writeInbound(HTTPServerRequestPart.end(nil))
+        _ = try await status(of: other)
+        let second = try #require(seen.withLockedValue { $0 }.last)
+        #expect(seen.withLockedValue { $0.count } == 2)
+        #expect(second.kind == .badRequest)
+        #expect(second.method == nil)
+        #expect(second.target == "/x")
     }
 
     private func status(of channel: NIOAsyncTestingChannel) async throws -> Int? {

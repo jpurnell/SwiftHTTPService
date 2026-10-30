@@ -42,6 +42,8 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     private let server: ServerContext
     private var state: State = .idle
     private var inFlight: Task<Response, any Error>?
+    /// The request line of this stream's request, kept raw until a refusal needs it.
+    private var requestLine: (method: String?, target: String?, forwardedFor: [String])?
     private var streamSession: StreamSession?
     private var streamTask: Task<Void, any Error>?
     private var streamTimer: Scheduled<Void>?
@@ -90,6 +92,10 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     // MARK: Head validation
 
     private func begin(_ block: HTTP2Frame.FramePayload.Headers, context: ChannelHandlerContext) {
+        // The request line is noted first of all, so that even a refusal for a head that is too large can say what it was for.
+        requestLine = (
+            method: block.headers.first { $0.name == ":method" }?.value, target: block.headers.first { $0.name == ":path" }?.value,
+            forwardedFor: server.configuration.forwarding == .xForwardedFor ? block.headers[canonicalForm: "x-forwarded-for"] : [])
         var method: String?
         var path: String?
         var authority: String?
@@ -255,7 +261,15 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     /// Answers with a refusal. If the peer is still sending, the stream is then reset with `NO_ERROR`, which
     /// is how RFC 9113 section 8.1 says to tell a peer to stop sending a body that is not wanted.
     private func refuse(_ refusal: Refusal, requestEnded: Bool, context: ChannelHandlerContext) {
-        write(server.response(for: refusal), isHead: false, requestEnded: requestEnded, context: context)
+        let peer = context.channel.parent?.remoteAddress?.ipAddress
+        let line = requestLine
+        let about = RefusalContext(
+            peer: peer,
+            remote: ClientAddress.resolve(peer: peer, proxied: identity.client, forwardedFor: line?.forwardedFor ?? [], configuration: server.configuration),
+            method: line?.method.flatMap { RefusalRecord.text(ofMethod: Array($0.utf8)) },
+            target: line?.target.map { RefusalRecord.text(ofTarget: Array($0.utf8)) },
+            version: .http2)
+        write(server.response(for: refusal, about: about), isHead: false, requestEnded: requestEnded, context: context)
     }
 
     private func write(_ response: Response, isHead: Bool, requestEnded: Bool, context: ChannelHandlerContext) {
