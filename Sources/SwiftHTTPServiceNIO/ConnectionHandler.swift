@@ -54,6 +54,8 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private let liveness = ChannelLiveness()
     private var bodyTimer: Scheduled<Void>?
     private var inFlight: Task<Response, any Error>?
+    /// The request line of the request in progress, kept raw until a refusal needs it. Cleared when its response is written.
+    private var requestLine: (method: String, target: String, version: HTTPProtocolVersion, forwardedFor: [String])?
     private var streamSession: StreamSession?
     private var streamTask: Task<Void, any Error>?
     private var streamTimer: Scheduled<Void>?
@@ -100,6 +102,9 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     // MARK: Head validation
 
     private func begin(_ head: HTTPRequestHead, context: ChannelHandlerContext) {
+        requestLine = (
+            method: head.method.rawValue, target: head.uri, version: head.version.minor == 0 ? .http1_0 : .http1_1,
+            forwardedFor: server.configuration.forwarding == .xForwardedFor ? head.headers[canonicalForm: "x-forwarded-for"].map(String.init) : [])
         let validated: Validated
         switch validate(head) {
         case .success(let value): validated = value
@@ -256,10 +261,19 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private func refuse(_ refusal: Refusal, context: ChannelHandlerContext) {
         cancelBodyTimer()
         context.triggerUserOutboundEvent(GuardSignal.discard, promise: nil)
-        write(server.response(for: refusal), isHead: false, close: true, context: context)
+        let peer = context.remoteAddress?.ipAddress
+        let line = requestLine
+        let about = RefusalContext(
+            peer: peer,
+            remote: ClientAddress.resolve(peer: peer, proxied: identity.client, forwardedFor: line?.forwardedFor ?? [], configuration: server.configuration),
+            method: line.flatMap { RefusalRecord.text(ofMethod: Array($0.method.utf8)) },
+            target: line.map { RefusalRecord.text(ofTarget: Array($0.target.utf8)) },
+            version: line?.version)
+        write(server.response(for: refusal, about: about), isHead: false, close: true, context: context)
     }
 
     private func write(_ response: Response, isHead: Bool, close: Bool, context: ChannelHandlerContext) {
+        requestLine = nil
         state = close ? .closing : .idle
         let prepared = ResponseRules.prepare(response)
         var headers = HTTPHeaders()
@@ -296,6 +310,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private func writeStreaming(
         _ response: Response, stream: ResponseStream, isHead: Bool, version: HTTPProtocolVersion, context: ChannelHandlerContext
     ) {
+        requestLine = nil
         let prepared = ResponseRules.prepare(response)
         guard prepared.hasBody else {
             // A status that has no body (204, 304) has nothing to stream: it is an ordinary bodyless response.

@@ -6,6 +6,40 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
+Found by the SwiftPushHub migration, which is the first consumer to rely on the transport's refusals. Nothing a caller
+of 0.4.0 writes changes: `RefusalHooks` gains a defaulted third parameter, and the `SIGHUP` fix is internal.
+
+### Added
+- **`RefusalHooks.record` and `RefusalRecord`.** A request the transport refuses (a malformed target, a `Host` problem,
+  an oversize body, a header over the limit, a timeout, a handler that threw) never reaches a handler or middleware, so
+  an access log cannot see it. `record` is called once for each, before it is written, with the kind, the socket's peer,
+  the client as a trusted proxy reported it, the HTTP version, and, when the request line had been read, the method and
+  the target. A stranger wrote those, so they are made safe: the method is shown only if it is a token of at most 32
+  characters; the target has every byte outside visible ASCII written as `%XX` (so it cannot end a log line or carry a
+  control sequence) and is cut at 512 characters, marked `...`. Over HTTP/2 the request line is noted before anything
+  else, so even a refusal for a head that is too large says what it was for. A refusal on a later request of a
+  kept-alive connection does not borrow an earlier request's line. `observe` still works and is told once.
+
+### Fixed
+- **Overlapping `TLSReloadTrigger.hangup()` streams could hand `SIGHUP` back to its default.** Each stream saved what
+  the one before it had installed, so the first to end could restore the default while another still listened, and the
+  next `SIGHUP` would end the process. There is now one signal source for the whole process, shared and
+  reference-counted: every signal reaches every open stream, and the disposition found when the first stream began
+  (including `SIG_IGN`, for a process run under `nohup`) is put back only when the last one ends. Reported by the
+  SwiftPushHub migration, from reading the code; reproduced by a test here.
+
+### Notes
+- A flake in the new `SIGHUP` tests, found by the gate and fixed before release: a stream ends a moment after its consumer
+  is cancelled, and a test that reset `SIGHUP` to its default while an earlier stream was still registered would then
+  signal a process whose source had not been reinstalled, and the signal ended the test run. Each such test now waits
+  until no hangup stream is open. Eight consecutive runs of the gate's own test checker pass.
+- Tests: 167 in the core, 256 in the transport (from 241). 38 hand mutants, each run alone: 30 killed at first; the
+  survivors were missing cases (a digit in a method; a trusted-proxy refusal over HTTP/2; escaping inside the HTTP/1.1
+  handler, which NIO's parser never lets unsafe bytes reach, so it is proved by driving the handler directly) and two
+  equivalent mutants (an early-exit counter, and an explicit `cancel()` before a dispatch source is released).
+
 ## [0.4.0] - 2026-10-29
 
 The kit now covers everything the servers it replaces need (owner's decisions D2 and D4, 2026-10-29), so that none of
@@ -240,7 +274,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.1.0...v0.2.0

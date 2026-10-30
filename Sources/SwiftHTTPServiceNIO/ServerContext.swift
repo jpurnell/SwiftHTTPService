@@ -35,11 +35,23 @@ final class ServerContext: Sendable {
 
     /// The response for a refusal: the server's body if its hook gives one, the fixed default if not. The hook is
     /// told first. The status is always the refusal's own, whatever the hook's response says.
-    func response(for refusal: Refusal) -> Response {
+    func response(for refusal: Refusal, about request: RefusalContext = RefusalContext()) -> Response {
         let kind = TransportRefusal(refusal)
         refusals.observe?(kind)
+        refusals.record?(RefusalRecord(
+            kind: kind, peerAddress: request.peer, remoteAddress: request.remote, method: request.method, target: request.target,
+            httpVersion: request.version))
         guard var custom = refusals.respond?(kind) else { return refusal.response }
         custom.status = HTTPResponse.Status(code: refusal.statusCode)
         return custom
     }
+}
+
+/// What a handler knows about the request a refusal is about, already made safe (see ``RefusalRecord``).
+struct RefusalContext {
+    var peer: String?
+    var remote: String?
+    var method: String?
+    var target: String?
+    var version: HTTPProtocolVersion?
 }

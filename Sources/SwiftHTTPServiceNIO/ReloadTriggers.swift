@@ -4,6 +4,7 @@
 // When to reload the TLS identity: sources of triggers, and the server loop that acts on them.
 
 import Dispatch
+import NIOConcurrencyHelpers
 import Foundation
 import SwiftHTTPService
 import SwiftTLSKit
@@ -17,19 +18,15 @@ public enum TLSReloadTrigger {
 
     /// One element for each `SIGHUP` the process receives.
     ///
-    /// For as long as the stream lives the signal's default action, ending the process, is replaced by this
-    /// stream. When the stream ends the signal source is cancelled and the disposition found at the start is
-    /// put back, so a process that had `SIGHUP` ignored (run under `nohup`) is left that way.
+    /// For as long as any hangup stream lives the signal's default action, ending the process, is replaced by these
+    /// streams; there is one signal source for the whole process, and each signal is delivered to every stream that
+    /// is open. When the last stream ends the source is cancelled and the disposition found when the first one began
+    /// is put back, so a process that had `SIGHUP` ignored (run under `nohup`) is left that way, and ending one of
+    /// two overlapping streams does not hand the signal back to its default while the other still listens.
     public static func hangup() -> AsyncStream<Void> {
         AsyncStream { continuation in
-            let previous = signal(SIGHUP, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: SIGHUP, queue: DispatchQueue.global())
-            source.setEventHandler { continuation.yield() }
-            continuation.onTermination = { _ in
-                source.cancel()
-                signal(SIGHUP, previous)
-            }
-            source.resume()
+            let id = HangupBroadcaster.shared.add(continuation)
+            continuation.onTermination = { _ in HangupBroadcaster.shared.remove(id) }
         }
     }
 
@@ -96,5 +93,62 @@ extension HTTPServer {
         for try await _ in triggers {
             if let outcome = reloadTLS(mode) { report(outcome) }
         }
+    }
+}
+
+/// The process's one `SIGHUP` source, shared by every ``TLSReloadTrigger/hangup()`` stream.
+///
+/// A signal disposition belongs to the process, not to a stream, so the streams share it: the first to begin saves
+/// what was there and ignores the signal, the last to end puts it back. Without that, each stream saved what the
+/// one before it had installed, and the first to end could restore the default while another still listened.
+// Justification: every access to `listeners`, `source` and `previous` is inside `lock`.
+final class HangupBroadcaster: @unchecked Sendable {
+    static let shared = HangupBroadcaster()
+
+    /// How many hangup streams are open. The streams end when their consumers are cancelled, a moment later, so a
+    /// caller that is about to change the signal's disposition itself waits for this to reach zero first.
+    var listenerCount: Int { lock.withLock { listeners.count } }
+
+    private let lock = NIOLock()
+    private var listeners: [UUID: AsyncStream<Void>.Continuation] = [:]
+    private var source: (any DispatchSourceSignal)?
+    private var previous: (@convention(c) (Int32) -> Void)?
+
+    /// Starts delivering to `continuation`, installing the source if it is the first. Returns its handle.
+    func add(_ continuation: AsyncStream<Void>.Continuation) -> UUID {
+        let id = UUID()
+        lock.withLock {
+            if listeners.isEmpty { install() }
+            listeners[id] = continuation
+        }
+        return id
+    }
+
+    /// Stops delivering to the stream with `id`, putting the signal back if it was the last.
+    func remove(_ id: UUID) {
+        lock.withLock {
+            listeners.removeValue(forKey: id)
+            if listeners.isEmpty { uninstall() }
+        }
+    }
+
+    // Both run with the lock held.
+
+    private func install() {
+        previous = signal(SIGHUP, SIG_IGN)
+        let made = DispatchSource.makeSignalSource(signal: SIGHUP, queue: DispatchQueue.global())
+        made.setEventHandler { [self] in
+            let heard = lock.withLock { Array(listeners.values) }
+            for continuation in heard { continuation.yield() }
+        }
+        made.resume()
+        source = made
+    }
+
+    private func uninstall() {
+        source?.cancel()
+        source = nil
+        signal(SIGHUP, previous)
+        previous = nil
     }
 }
