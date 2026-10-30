@@ -127,6 +127,14 @@ swift test
 quality-gate
 ```
 
+## Continuous integration
+
+`.github/workflows/ci.yml` builds and tests on Linux (a `swift:6.2` container) and on macOS. **It has not been run**: it was
+written where Actions cannot run, and no container runtime was available to try the Linux build, so Linux remains
+untested until its first run. The one private dependency, SwiftTLSKit (an SSH URL in `Package.swift`), needs a read-only
+**deploy key** on that repository and its private half as the Actions secret `SWIFTTLSKIT_DEPLOY_KEY` on this one; the
+steps are in the workflow's header comment. Pull requests from forks have no secrets and cannot resolve it.
+
 ## Licence
 
 Proprietary. See `LICENSE`.
