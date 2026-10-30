@@ -24,6 +24,8 @@ final class Collector: ChannelInboundHandler, @unchecked Sendable {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        // The server's FIN: for a client kept open after it (keepOpenAfterFIN), the server has ended the connection.
+        if let channelEvent = event as? ChannelEvent, case .inputClosed = channelEvent { closed.withLockedValue { $0 = true } }
         if case TLSUserEvent.handshakeCompleted(let negotiated) = event {
             negotiatedProtocol.withLockedValue { $0 = negotiated }
             handshakeCompleted.withLockedValue { $0 = true }
@@ -61,10 +63,13 @@ struct RawClient: Sendable {
 
     /// Connects to `address`. With `tls`, speaks TLS using that SwiftTLSKit client context, naming the server `localhost`.
     static func connect(
-        to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext? = nil, prelude: [UInt8]? = nil
+        to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext? = nil, prelude: [UInt8]? = nil,
+        keepOpenAfterFIN: Bool = false
     ) async throws -> RawClient {
         let collector = Collector()
         let channel = try await ClientBootstrap(group: group)
+            // By default a client closes when the server's FIN arrives; one that does not is a peer that never leaves.
+            .channelOption(ChannelOptions.allowRemoteHalfClosure, value: keepOpenAfterFIN)
             .channelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     if let tls { try tls.addHandlers(to: channel.pipeline.syncOperations, serverHostname: "localhost") }

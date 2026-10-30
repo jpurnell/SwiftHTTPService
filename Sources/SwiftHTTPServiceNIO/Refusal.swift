@@ -19,6 +19,10 @@ enum Refusal: Error, Sendable, Equatable, CaseIterable {
     case expectationFailed
     case headersTooLarge
     case internalError
+    /// A connection past `Limits.maximumConnections`, told so before anything is read from it.
+    case serviceUnavailable
+    /// A request line whose HTTP major version is not 1.
+    case versionNotSupported
 
     var statusCode: Int {
         switch self {
@@ -28,6 +32,8 @@ enum Refusal: Error, Sendable, Equatable, CaseIterable {
         case .expectationFailed: 417
         case .headersTooLarge: 431
         case .internalError: 500
+        case .serviceUnavailable: 503
+        case .versionNotSupported: 505
         }
     }
 
@@ -40,6 +46,8 @@ enum Refusal: Error, Sendable, Equatable, CaseIterable {
         case .expectationFailed: "expectation_failed"
         case .headersTooLarge: "headers_too_large"
         case .internalError: "internal_error"
+        case .serviceUnavailable: "service_unavailable"
+        case .versionNotSupported: "http_version_not_supported"
         }
     }
 
@@ -56,6 +64,8 @@ enum Refusal: Error, Sendable, Equatable, CaseIterable {
         case .expectationFailed: "Expectation Failed"
         case .headersTooLarge: "Request Header Fields Too Large"
         case .internalError: "Internal Server Error"
+        case .serviceUnavailable: "Service Unavailable"
+        case .versionNotSupported: "HTTP Version Not Supported"
         }
     }
 }

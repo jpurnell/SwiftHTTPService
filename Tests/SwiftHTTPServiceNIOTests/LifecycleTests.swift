@@ -147,7 +147,7 @@ struct LifecycleTests {
 
     // MARK: The cap
 
-    @Test("Connections over the cap are closed at once with nothing written, and the cap frees when one closes")
+    @Test("Connections over the cap are answered 503 and closed (BusyRefusalTests has the detail), and the cap frees when one closes")
     func connectionCap() async throws {
         let running = try await startServer(limits: Limits(maximumConnections: 2))
         try await withGroup { group in
@@ -159,8 +159,8 @@ struct LifecycleTests {
             #expect(try await second.response()?.status == 200)
 
             let third = try await RawClient.connect(to: running.address, group: group)
+            #expect(try await third.response()?.status == 503)
             #expect(try await third.waitUntilClosed(), "a connection over the cap was kept")
-            #expect(third.received.isEmpty, "a connection over the cap was written to")
             #expect(!first.isClosed && !second.isClosed)
 
             await first.close()
@@ -176,13 +176,13 @@ struct LifecycleTests {
 
     // MARK: Time, for real
 
-    @Test("An idle connection is closed by the server at the idle timeout, with nothing written")
+    @Test("A connection that never sends a byte is answered 408 at the idle timeout and closed (WireDifferencesTests has the detail)")
     func realIdleTimeout() async throws {
         let running = try await startServer(limits: Limits(idleTimeout: .milliseconds(300)))
         try await withGroup { group in
             let client = try await RawClient.connect(to: running.address, group: group)
+            #expect(try await client.response()?.status == 408)
             #expect(try await client.waitUntilClosed(timeout: .seconds(5)))
-            #expect(client.received.isEmpty)
         }
         await running.server.shutdown()
     }

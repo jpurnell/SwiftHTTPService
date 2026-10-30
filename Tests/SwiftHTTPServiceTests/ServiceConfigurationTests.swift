@@ -28,6 +28,7 @@ struct ServiceConfigurationTests {
         #expect(limits.maximumStreamDuration == .seconds(3600))
         #expect(limits.maximumStreamBytes == 1 << 30)       // 1 GiB
         #expect(limits.streamWriteTimeout == .seconds(30))
+        #expect(limits.busyRetryAfter == .seconds(1))
         #expect(configuration.protocols == .http1AndHTTP2)  // design H2
         #expect(configuration.connections == .keepAlive)    // connections are reused unless asked otherwise
         #expect(configuration.trustedProxies.isEmpty)       // nothing is trusted unless named
@@ -167,6 +168,9 @@ struct ServiceConfigurationTests {
         Case(name: "idle timeout above the ceiling", field: "limits.idleTimeout", reason: .outOfRange, build: limits { $0.idleTimeout = .seconds(3601) }),
         Case(name: "connections zero", field: "limits.maximumConnections", reason: .outOfRange, build: limits { $0.maximumConnections = 0 }),
         Case(name: "connections above the ceiling", field: "limits.maximumConnections", reason: .outOfRange, build: limits { $0.maximumConnections = 100_001 }),
+        Case(name: "busy retry zero", field: "limits.busyRetryAfter", reason: .outOfRange, build: limits { $0.busyRetryAfter = .zero }),
+        Case(name: "busy retry negative", field: "limits.busyRetryAfter", reason: .outOfRange, build: limits { $0.busyRetryAfter = .seconds(-1) }),
+        Case(name: "busy retry above the ceiling", field: "limits.busyRetryAfter", reason: .outOfRange, build: limits { $0.busyRetryAfter = .seconds(3601) }),
         Case(name: "grace negative", field: "limits.shutdownGrace", reason: .outOfRange, build: limits { $0.shutdownGrace = .seconds(-1) }),
         Case(name: "grace above the ceiling", field: "limits.shutdownGrace", reason: .outOfRange, build: limits { $0.shutdownGrace = .seconds(601) }),
 
@@ -217,6 +221,8 @@ struct ServiceConfigurationTests {
         EdgeCase(name: "a sub-second timeout", build: { try ServiceConfiguration(limits: Limits(headerReadTimeout: .milliseconds(100))) }),
         EdgeCase(name: "one connection", build: { try ServiceConfiguration(limits: Limits(maximumConnections: 1)) }),
         EdgeCase(name: "connections at the ceiling", build: { try ServiceConfiguration(limits: Limits(maximumConnections: 100_000)) }),
+        EdgeCase(name: "a busy retry of one nanosecond", build: { try ServiceConfiguration(limits: Limits(busyRetryAfter: .nanoseconds(1))) }),
+        EdgeCase(name: "a busy retry at the ceiling", build: { try ServiceConfiguration(limits: Limits(busyRetryAfter: .seconds(3600))) }),
         EdgeCase(name: "no grace period", build: { try ServiceConfiguration(limits: Limits(shutdownGrace: .zero)) }),
         EdgeCase(name: "grace at the ceiling", build: { try ServiceConfiguration(limits: Limits(shutdownGrace: .seconds(600))) }),
         EdgeCase(name: "tls with both paths", build: {
@@ -230,6 +236,32 @@ struct ServiceConfigurationTests {
     func edgesAccepted(_ edgeCase: EdgeCase) throws {
         let configuration = try edgeCase.build()
         #expect(!configuration.host.isEmpty)
+    }
+
+    // MARK: The Retry-After a busy refusal carries
+
+    struct RetryCase: Sendable, CustomTestStringConvertible {
+        let duration: Duration
+        let seconds: Int
+        var testDescription: String { "\(duration)" }
+    }
+
+    // Retry-After is whole seconds (RFC 9110 section 10.2.3), and a client told to wait less than it needs
+    // retries too soon, so every fraction rounds up: ceil(x) worked out by hand.
+    static let retryCases: [RetryCase] = [
+        RetryCase(duration: .nanoseconds(1), seconds: 1),
+        RetryCase(duration: .milliseconds(100), seconds: 1),
+        RetryCase(duration: .milliseconds(999), seconds: 1),
+        RetryCase(duration: .seconds(1), seconds: 1),
+        RetryCase(duration: .milliseconds(1001), seconds: 2),
+        RetryCase(duration: .milliseconds(1500), seconds: 2),
+        RetryCase(duration: .seconds(3), seconds: 3),
+        RetryCase(duration: .seconds(3600), seconds: 3600),
+    ]
+
+    @Test("The Retry-After of a busy refusal is the duration rounded up to whole seconds", arguments: retryCases)
+    func retryAfterSeconds(_ c: RetryCase) {
+        #expect(Limits(busyRetryAfter: c.duration).busyRetryAfterSeconds == c.seconds)
     }
 
     // MARK: Errors do not leak

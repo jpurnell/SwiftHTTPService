@@ -12,8 +12,13 @@ enum GuardEvent: Sendable, Equatable {
     case headerTimeout
     /// The request line and headers passed `maximumHeaderBytes` without ending.
     case headTooLarge
-    /// A keep-alive connection waited `idleTimeout` for its next request, or a new one sent nothing.
+    /// A keep-alive connection waited `idleTimeout` for its next request.
     case idleTimeout
+    /// A new connection sent nothing in `idleTimeout`. It is a request that is late, not a connection that is idle,
+    /// so it is answered (408) where an idle keep-alive connection is closed silently.
+    case silentTimeout
+    /// The request line names an HTTP major version other than 1.
+    case unsupportedVersion
 }
 
 /// What the connection handler tells the guard, as outbound user events.
@@ -59,6 +64,11 @@ final class HeadGuard: ChannelDuplexHandler, @unchecked Sendable {
     private var phase: Phase = .head(bytes: 0, matched: 0)
     private var headerTimer: Scheduled<Void>?
     private var idleTimer: Scheduled<Void>?
+    /// Whether any byte has arrived on this connection. Until one has, a quiet connection is a late first request.
+    private var hasReceivedBytes = false
+    /// The last bytes of the request line in progress (enough to hold ` HTTP/d.d`), until its line feed.
+    private var lineTail: [UInt8] = []
+    private var lineEnded = false
 
     init(limits: Limits) {
         self.limits = limits
@@ -95,6 +105,7 @@ final class HeadGuard: ChannelDuplexHandler, @unchecked Sendable {
             context.fireChannelRead(data)
         case .head(var bytes, var matched):
             if bytes == 0 {
+                hasReceivedBytes = true
                 idleTimer?.cancel()
                 idleTimer = nil
                 armHeaderTimer(context: context)
@@ -108,6 +119,15 @@ final class HeadGuard: ChannelDuplexHandler, @unchecked Sendable {
                     return
                 }
                 bytes += 1
+                if !lineEnded, Self.endsLine(byte, tail: &lineTail) {
+                    lineEnded = true
+                    if Self.hasUnsupportedMajor(requestLine: lineTail) {
+                        phase = .discarding
+                        cancelTimers()
+                        context.fireUserInboundEventTriggered(GuardEvent.unsupportedVersion)
+                        return
+                    }
+                }
                 matched = Self.advance(matched, byte)
                 if matched == 4 {
                     found = true
@@ -135,6 +155,8 @@ final class HeadGuard: ChannelDuplexHandler, @unchecked Sendable {
         switch signal {
         case .requestFinished:
             if case .discarding = phase {} else { phase = .head(bytes: 0, matched: 0) }
+            lineTail.removeAll(keepingCapacity: true)
+            lineEnded = false
         case .responseFinished:
             if case .head(let bytes, _) = phase, bytes == 0, headerTimer == nil { armIdleTimer(context: context) }
         case .discard:
@@ -154,6 +176,31 @@ final class HeadGuard: ChannelDuplexHandler, @unchecked Sendable {
         return byte == 0x0D ? 1 : 0
     }
 
+    /// Feeds one byte of a request line; true at its line feed. Only the last ten bytes are kept, which is all that
+    /// ` HTTP/d.d` and a carriage return need.
+    static func endsLine(_ byte: UInt8, tail: inout [UInt8]) -> Bool {
+        if byte == 0x0A { return true }
+        tail.append(byte)
+        if tail.count > 10 { tail.removeFirst(tail.count - 10) }
+        return false
+    }
+
+    /// Whether a request line ends in ` HTTP/d.d` with a major version digit that is not 1. Anything else (a
+    /// version that is not of that shape, or a 1.x) is the parser's to judge.
+    static func hasUnsupportedMajor(requestLine tail: [UInt8]) -> Bool {
+        var line = tail
+        if line.last == 0x0D { line.removeLast() }
+        guard line.count >= 9 else { return false }
+        let version = Array(line.suffix(8))
+        let prefix = Array("HTTP/".utf8)
+        guard line[line.count - 9] == 0x20,
+              Array(version.prefix(5)) == prefix,
+              version[6] == 0x2E,
+              (0x30...0x39).contains(version[5]), (0x30...0x39).contains(version[7])
+        else { return false }
+        return version[5] != 0x31
+    }
+
     private func armHeaderTimer(context: ChannelHandlerContext) {
         headerTimer?.cancel()
         let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
@@ -171,7 +218,7 @@ final class HeadGuard: ChannelDuplexHandler, @unchecked Sendable {
         idleTimer = context.eventLoop.scheduleTask(in: limits.idleTimeout.timeAmount) { [weak self] in
             guard let self else { return }
             self.idleTimer = nil
-            loopContext.value.fireUserInboundEventTriggered(GuardEvent.idleTimeout)
+            loopContext.value.fireUserInboundEventTriggered(self.hasReceivedBytes ? GuardEvent.idleTimeout : GuardEvent.silentTimeout)
         }
     }
 

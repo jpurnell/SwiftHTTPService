@@ -284,7 +284,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         let hasBody = prepared.hasBody
         if hasBody { headers.add(name: "Content-Length", value: String(prepared.body.count)) }
 
-        let head = HTTPResponseHead(version: .http1_1, status: HTTPResponseStatus(statusCode: code), headers: headers)
+        let head = HTTPResponseHead(version: .http1_1, status: ResponseRules.wireStatus(code: code), headers: headers)
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         if hasBody, !isHead, !prepared.body.isEmpty {
             context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: prepared.body)))), promise: nil)
@@ -325,7 +325,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         headers.add(name: "Date", value: HTTPDate.string(for: Date()))
         headers.add(name: "Connection", value: closeAfterResponse ? "close" : "keep-alive")
         let head = HTTPResponseHead(
-            version: unframed ? .http1_0 : .http1_1, status: HTTPResponseStatus(statusCode: prepared.code), headers: headers)
+            version: unframed ? .http1_0 : .http1_1, status: ResponseRules.wireStatus(code: prepared.code), headers: headers)
         context.writeAndFlush(wrapOutboundOut(.head(head)), promise: nil)
 
         guard !isHead else {
@@ -428,9 +428,13 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
             context.close(promise: nil)
         case (.headerTimeout, .idle):
             refuse(.requestTimeout, context: context)
+        case (.silentTimeout, .idle):
+            refuse(.requestTimeout, context: context)
         case (.headTooLarge, .idle):
             refuse(.headersTooLarge, context: context)
-        case (.headerTimeout, _), (.headTooLarge, _):
+        case (.unsupportedVersion, .idle):
+            refuse(.versionNotSupported, context: context)
+        case (.headerTimeout, _), (.headTooLarge, _), (.unsupportedVersion, _):
             // Bytes of a pipelined request while one is in flight: not served, and the connection ends.
             closeAfterResponse = true
         default:

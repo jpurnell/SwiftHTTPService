@@ -41,9 +41,18 @@ final class ServerContext: Sendable {
         refusals.record?(RefusalRecord(
             kind: kind, peerAddress: request.peer, remoteAddress: request.remote, method: request.method, target: request.target,
             httpVersion: request.version))
-        guard var custom = refusals.respond?(kind) else { return refusal.response }
+        guard var custom = refusals.respond?(kind) else { return withRetryAfter(refusal.response, for: refusal) }
         custom.status = HTTPResponse.Status(code: refusal.statusCode)
-        return custom
+        return withRetryAfter(custom, for: refusal)
+    }
+
+    /// A busy refusal tells the peer when to come back, and only the transport says when: a hook's own `Retry-After`
+    /// is replaced, because the number is a statement about the server's capacity.
+    private func withRetryAfter(_ response: Response, for refusal: Refusal) -> Response {
+        guard refusal == .serviceUnavailable else { return response }
+        var response = response
+        response.headers[.retryAfter] = String(configuration.limits.busyRetryAfterSeconds)
+        return response
     }
 }
 

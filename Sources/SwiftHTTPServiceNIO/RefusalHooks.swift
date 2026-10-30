@@ -25,6 +25,13 @@ public enum TransportRefusal: Sendable, Equatable, CaseIterable, CustomStringCon
     case headersTooLarge
     /// The handler threw, or returned a status that is not a final one.
     case internalError
+    /// A connection beyond `Limits.maximumConnections`, answered `503` with `Retry-After` and closed. It is refused
+    /// before its request is read, so a record of it has a peer and no request line. Over TLS the connection is
+    /// closed before the handshake instead, and no hook is called (see ``Limits/maximumConnections``).
+    case busy
+    /// A request line naming an HTTP major version other than 1 (`HTTP/2.0`, `HTTP/3.0`), answered `505`. HTTP/2 is
+    /// spoken over TLS with ALPN, never as a request line in HTTP/1.1 framing.
+    case versionNotSupported
 
     /// The status the transport answers with. A hook cannot change it.
     public var statusCode: Int { refusal.statusCode }
@@ -44,6 +51,8 @@ public enum TransportRefusal: Sendable, Equatable, CaseIterable, CustomStringCon
         case .expectationFailed: self = .expectationFailed
         case .headersTooLarge: self = .headersTooLarge
         case .internalError: self = .internalError
+        case .serviceUnavailable: self = .busy
+        case .versionNotSupported: self = .versionNotSupported
         }
     }
 
@@ -56,6 +65,8 @@ public enum TransportRefusal: Sendable, Equatable, CaseIterable, CustomStringCon
         case .expectationFailed: .expectationFailed
         case .headersTooLarge: .headersTooLarge
         case .internalError: .internalError
+        case .busy: .serviceUnavailable
+        case .versionNotSupported: .versionNotSupported
         }
     }
 }

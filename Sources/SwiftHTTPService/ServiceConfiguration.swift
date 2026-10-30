@@ -81,6 +81,18 @@ public struct Limits: Sendable, Equatable {
     /// How long a single write of a streaming response may wait for the peer to read before the stream is ended:
     /// above zero, at most an hour. Default 30 s. A peer that stops reading cannot hold a stream open.
     public var streamWriteTimeout: Duration
+    /// What a connection refused for want of room is told to wait before it tries again (`Retry-After`): above
+    /// zero, at most an hour. Default one second. The header carries whole seconds, so a fraction is rounded up
+    /// (`busyRetryAfterSeconds`).
+    public var busyRetryAfter: Duration
+
+    /// ``busyRetryAfter`` as the whole seconds the `Retry-After` header carries: rounded up, so a client is never
+    /// told to come back sooner than the value asks. One second at least.
+    package var busyRetryAfterSeconds: Int {
+        let parts = busyRetryAfter.components
+        let whole = Int(clamping: parts.seconds) + (parts.attoseconds > 0 ? 1 : 0)
+        return max(1, whole)
+    }
 
     /// Creates limits; anything not given is the default.
     public init(
@@ -95,7 +107,8 @@ public struct Limits: Sendable, Equatable {
         maximumConcurrentStreams: Int = 100,
         maximumStreamDuration: Duration = .seconds(3600),
         maximumStreamBytes: Int = 1 << 30,
-        streamWriteTimeout: Duration = .seconds(30)
+        streamWriteTimeout: Duration = .seconds(30),
+        busyRetryAfter: Duration = .seconds(1)
     ) {
         self.maximumHeaderBytes = maximumHeaderBytes
         self.maximumHeaderCount = maximumHeaderCount
@@ -109,6 +122,7 @@ public struct Limits: Sendable, Equatable {
         self.maximumStreamDuration = maximumStreamDuration
         self.maximumStreamBytes = maximumStreamBytes
         self.streamWriteTimeout = streamWriteTimeout
+        self.busyRetryAfter = busyRetryAfter
     }
 }
 
@@ -232,6 +246,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
         try require(limits.maximumStreamDuration > .zero && limits.maximumStreamDuration <= .seconds(86_400), "limits.maximumStreamDuration")
         try require((1...(1 << 40)).contains(limits.maximumStreamBytes), "limits.maximumStreamBytes")
         try require(limits.streamWriteTimeout > .zero && limits.streamWriteTimeout <= hour, "limits.streamWriteTimeout")
+        try require(limits.busyRetryAfter > .zero && limits.busyRetryAfter <= hour, "limits.busyRetryAfter")
         try require(limits.shutdownGrace >= .zero && limits.shutdownGrace <= .seconds(600), "limits.shutdownGrace")
     }
 

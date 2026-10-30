@@ -418,8 +418,8 @@ struct RefusalTests {
          "GET /a HTTP/1.1\r\n\r\n"),
         ("a duplicate Host",
          "GET /a HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n"),
-        ("an unknown protocol version",
-         "GET /a HTTP/9.9\r\nHost: h\r\n\r\n"),
+        ("an unknown minor protocol version",
+         "GET /a HTTP/1.9\r\nHost: h\r\n\r\n"),
         ("a missing protocol version",
          "GET /a\r\nHost: h\r\n\r\n"),
         ("a lowercase method",
@@ -509,14 +509,14 @@ struct TimeoutTests {
         #expect(try await harness.isClosed())
     }
 
-    @Test("A connection that sends nothing is closed at the idle timeout, silently")
+    @Test("A connection that sends nothing is answered 408 at the idle timeout, and closed")
     func idleBeforeFirstRequest() async throws {
         let harness = try await PipelineHarness(limits: Limits(idleTimeout: .seconds(60)), handler: ok())
         await harness.advance(.seconds(59))
         #expect(harness.channel.isActive)
         await harness.advance(.seconds(2))
+        #expect(try await harness.readResponse()?.status == 408)
         #expect(try await harness.isClosed())
-        #expect(try await harness.drainOutbound().isEmpty)
     }
 
     @Test("A keep-alive connection is closed at the idle timeout after its last response")

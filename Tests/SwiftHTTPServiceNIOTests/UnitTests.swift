@@ -16,7 +16,7 @@ struct RefusalBodyTests {
         // The named statuses carry their reason phrases; `Status(code:)` has none, which would blank the title.
         let statuses: [Int: HTTPResponse.Status] = [
             400: .badRequest, 408: .requestTimeout, 413: .contentTooLarge, 417: .expectationFailed,
-            431: .requestHeaderFieldsTooLarge, 500: .internalServerError,
+            431: .requestHeaderFieldsTooLarge, 500: .internalServerError, 503: .serviceUnavailable, 505: .httpVersionNotSupported,
         ]
         let status = try #require(statuses[refusal.statusCode])
         #expect(refusal.body == (try Response.problem(Problem(status: status, code: refusal.code))).body)

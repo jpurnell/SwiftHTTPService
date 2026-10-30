@@ -6,6 +6,7 @@
 
 import Foundation
 import HTTPTypes
+import NIOHTTP1
 import SwiftHTTPService
 
 /// What makes a request acceptable, whatever carried it.
@@ -61,6 +62,18 @@ enum ResponseRules {
         switch result {
         case .success(let response) where (200...599).contains(response.status.code): .success(response)
         case .success, .failure: .failure(.internalError)
+        }
+    }
+
+    /// The status as NIO writes it. NIO's table still has the phrases RFC 9110 replaced (`Payload Too Large`,
+    /// `Requested Range Not Satisfiable`, `Unprocessable Entity`); the code is what a client acts on, but the line is
+    /// ours to get right, so the three renamed phrases are given as the RFC now has them.
+    static func wireStatus(code: Int) -> HTTPResponseStatus {
+        switch code {
+        case 413: .custom(code: 413, reasonPhrase: "Content Too Large")
+        case 416: .custom(code: 416, reasonPhrase: "Range Not Satisfiable")
+        case 422: .custom(code: 422, reasonPhrase: "Unprocessable Content")
+        default: HTTPResponseStatus(statusCode: code)
         }
     }
 

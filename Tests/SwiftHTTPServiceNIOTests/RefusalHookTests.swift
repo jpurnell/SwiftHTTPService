@@ -133,6 +133,7 @@ struct RefusalHookTests {
             (.badRequest, 400, "bad_request"), (.malformedTarget, 400, "malformed_target"), (.requestTimeout, 408, "request_timeout"),
             (.bodyTooLarge, 413, "body_too_large"), (.expectationFailed, 417, "expectation_failed"),
             (.headersTooLarge, 431, "headers_too_large"), (.internalError, 500, "internal_error"),
+            (.busy, 503, "service_unavailable"), (.versionNotSupported, 505, "http_version_not_supported"),
         ]
         #expect(TransportRefusal.allCases.count == expected.count)
         for (kind, status, code) in expected {
