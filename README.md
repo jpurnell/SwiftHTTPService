@@ -2,7 +2,7 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 0.4.1 (2026-10-29), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
+**Status:** 0.5.0 (2026-10-30), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
 in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
 trusted proxies, the PROXY protocol, refusal hooks and TLS reload) exist and are tested. `ijs-dashboard-server` has served on it
@@ -44,6 +44,13 @@ Design: `project/plans/proposals/DesignProposal_SwiftHTTPService.md`.
 - `RateLimiter`, `rateLimit(_:key:)`: a per-client limit (GCRA, integer nanoseconds, one number per client) with
   a bounded table, `429` as a problem with `Retry-After`. Behind a proxy, key on what the proxy reports.
   Order, outermost first: access log, request id, rate limiter, the rest.
+- `allowedHosts(_:)`: `421 Misdirected Request` unless `Host` (`:authority` over HTTP/2), port included, is on a list of
+  exact, ASCII-case-insensitive `host` or `host:port` entries. It is the defence against DNS rebinding **on a loopback bind**;
+  on a public bind the TLS name plus a `Host` check is the caller's decision. An empty list or a malformed entry throws.
+- `cors(allowedOrigins:allowedMethods:allowedHeaders:)`: strict CORS. Entries are serialized origins compared byte for byte
+  (`*`, `null`, paths and uppercase schemes are refused at construction); an origin not listed is `403`; a listed one is echoed
+  (never a wildcard) on the response, streaming included, with `Vary: Origin`; a preflight is answered `204` by the middleware
+  without calling the handler. Put it **before authentication** and after `allowedHosts`.
 
 ## The transport (`SwiftHTTPServiceNIO`)
 

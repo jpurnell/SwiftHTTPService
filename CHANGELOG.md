@@ -6,6 +6,55 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-30
+
+For the SwiftMoE migration (its `DesignProposal_HTTPServerOnSwiftHTTPService.md`). Nothing a caller of 0.4.1 writes
+changes: two new middleware and new tests. The design is `project/plans/proposals/DesignProposal_0.5.0.md`.
+
+### Added
+- **`allowedHosts(_:)` (K1).** `421 Misdirected Request`, a problem with the code `misdirected_request`, unless the request's
+  `Host` (an HTTP/2 `:authority` is already copied into it) is on a list of exact, ASCII-case-insensitive `host` or
+  `host:port` entries. A bare `host` entry admits only a `Host` without a port. No `Host`, or two, is refused. It is for a
+  **loopback bind** (DNS rebinding); on a public bind the TLS name plus the `Host` check is the caller's decision. Construction
+  throws `AllowedHostsError` for an empty list, or (naming the position) an entry that is empty, holds whitespace, a control
+  character or a byte outside ASCII, a scheme, path, query, userinfo or wildcard, a malformed port or bracketed IPv6 literal.
+- **`cors(allowedOrigins:allowedMethods:allowedHeaders:)` (K2).** Strict CORS. No `Origin`: passes through. An origin not
+  byte-for-byte on the list, or two `Origin` fields: `403`, code `origin_not_allowed`. `OPTIONS` from a listed origin: `204`
+  with `Access-Control-Allow-Methods` (default `POST`) and `-Headers` (default `Authorization, Content-Type`), answered
+  without calling the next handler, so authentication never sees it. Any other request from a listed origin: the handler's
+  response, streaming included, with that one origin echoed in `Access-Control-Allow-Origin`; never a wildcard. With a
+  non-empty list every response carries `Vary: Origin` (merged with the handler's own). Construction throws `CORSError`
+  for `*`, `null`, a path, query, fragment, userinfo, an upper-case letter, whitespace, a malformed port, or an explicit
+  default port (`:80` on `http`, `:443` on `https`: the last two are stricter than asked, because such an entry could never
+  match), and for methods or headers that are not tokens. Place it before authentication and after `allowedHosts`.
+- The brief named these `Middleware.allowedHosts` and `Middleware.cors`; `Middleware` is a function typealias and cannot
+  hold static members, so they are free functions like `requestID`, `accessLog` and `rateLimit`.
+
+### Verified (no change to the transport)
+- **Spike S1 / K4: an idle handler is cancelled when the client leaves.** Seven real-socket tests (HTTP/1.1 keep-alive,
+  `.closeAfterResponse`, a half-close, an idle streaming producer on both modes; HTTP/2 stream reset, connection close, an
+  idle streaming producer on both) require the application's task to see `Task.isCancelled` within 1 s of the client
+  leaving while it is suspended. All pass on the 0.4.1 transport (about 0.2 s each), so nothing was fixed. Removing
+  `inFlight?.cancel()` from either `channelInactive` turns five of them red, and removing `streamTask?.cancel()` turns the two producer tests red.
+
+### Notes
+- Tests: 196 in the core (from 167), 268 in the transport (from 256).
+- 48 hand mutants of the two files, each run alone against the core tests: 42 killed at first (one of them because it did
+  not compile). The six survivors: a six-digit port allowed (`(1...5)` to `(1...6)`: equivalent, the value check rejects it
+  anyway, and the guard exists to stop overflow); `0` as a port allowed, a space allowed, DEL allowed, and a port read from
+  the tail of an IPv6 literal (four pieces of redundant code, each already rejected by a stricter check, removed); and a
+  trailing empty label (`a.`) allowed, a missing case, now a test, and killed. Rerun after the changes: the port-leading-zero,
+  port-65536 and trailing-label mutants are killed. The mutants: one Host required to at least one; request side and entry
+  side not lower-cased; lower-casing stopping before `Z` or starting after `A`; an empty list accepted; status 421 to 400;
+  the code changed; leading zero, 6 digits, 65536 and 0 in a port; the name check always true; space and DEL admitted;
+  IPv6 with no colon; empty labels; two colons; text after a bracket; port digits unchecked; hex `g`; no underscore;
+  `Vary` never added, `*` or `origin` not recognised in an existing `Vary`, a refusal, a preflight or an origin-less response
+  not varied, `Vary` on an empty list; the preflight skipped (answered after the handler); two origins accepted; the origin
+  compared case-insensitively; a wildcard echoed; the echo dropped; refusal `401`; upper case, a default port, a leading digit
+  in the scheme or no `://` accepted; empty token, methods or headers accepted; methods and headers swapped; preflight `200`;
+  the error order changed.
+- `HTTPField.Name.host` is unavailable in HTTPTypes, so the kit keeps its own internal `Host` name.
+
 ## [0.4.1] - 2026-10-29
 
 Found by the SwiftPushHub migration, which is the first consumer to rely on the transport's refusals. Nothing a caller
@@ -274,7 +323,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.2.0...v0.3.0

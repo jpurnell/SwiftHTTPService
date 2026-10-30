@@ -74,6 +74,9 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
 - [x] ~~HTTP/2, only if a consumer needs it.~~ Done 2026-10-28 at the owner's request, before any consumer asked: it shipped
   despite the stated bar. `DesignProposal_HTTP2.md`; 137 transport tests; 27 hand mutations, all caught or removed.
 
+- [x] 0.5.0 (2026-10-30): idle-handler cancellation proved by real-socket tests (no transport change), `allowedHosts`, `cors`.
+  196 core and 268 transport tests; 48 hand mutants of the new code.
+
 ### What's Next
 - [x] `Router`, `Conditional`, `Router.addHealth()`: 66 tests, mutations caught.
 - [x] `ServiceConfiguration` and the transport: HTTP/1.1, limits, timeouts, connection cap, graceful shutdown, TLS through SwiftTLSKit.
@@ -168,20 +171,33 @@ note before code.
 
 - ~~HTTP/2, only if a consumer needs it.~~ Shipped ahead of any consumer (2026-10-28); see Current Status.
 
+### Released: 0.5.0 (2026-10-30), for the SwiftMoE migration
+Asked for by `DesignProposal_HTTPServerOnSwiftHTTPService.md` (SwiftMoE's repository), which is the first consumer to need
+the kit to cancel idle work and to guard a loopback bind. All three items shipped together.
+- [x] **K4 / spike S1: an idle handler is cancelled promptly when the client leaves.** Proved, not assumed: 7 real-socket tests
+  (HTTP/1.1 keep-alive, `.closeAfterResponse`, a half-close, an idle streaming producer; HTTP/2 stream reset, connection
+  close, an idle producer), all green on the 0.4.1 transport, so **no transport change**; deleting the `inFlight?.cancel()`
+  in either `channelInactive` turns five of them red.
+- [x] **K1 `allowedHosts(_:)`** (`421 misdirected_request`), the rule SwiftPushHub hand-wrote, for a loopback bind.
+- [x] **K2 `cors(allowedOrigins:allowedMethods:allowedHeaders:)`**, strict, the rule SwiftMoE has today.
+- Naming: the brief called them `Middleware.allowedHosts` and `Middleware.cors`, but `Middleware` is a typealias of a function
+  type and cannot hold static members; they are free functions like `requestID`, `accessLog` and `rateLimit`.
+
 ### Toward 1.0.0 (written 2026-10-29)
 The code is feature complete; what is left is evidence and a promise not to break the API.
 - [ ] Soak: SwiftPushHub and FleetWatch deployed on 0.4.1 for about a week, no transport fault (fault defined in `MigrationPlan_HandRolledServers.md` section 6).
 - [ ] Exercise the paths never run in anger: real HTTP/2 clients, TLS reload under traffic, the PROXY protocol behind a real balancer, the
   timeout refusals over a real socket, memory and descriptor growth over days.
 - [ ] Linux CI (the README says "untested").
-- [ ] Public API audit in a 0.5.0 (`Limits`, `RefusalHooks`, `ResponseStream`, `TLSReloadTrigger`, `ServiceConfiguration`), then freeze.
+- [ ] Public API audit (`Limits`, `RefusalHooks`, `ResponseStream`, `TLSReloadTrigger`, `ServiceConfiguration`), then freeze. **Moved
+  to 0.6.0:** 0.5.0 was spent on the three items SwiftMoE needed (see above), which add API of their own to audit.
 - [ ] Fuzz the request-target, PROXY-header and form parsers; load-test the connection cap and the HTTP/2 flood defences.
 - [ ] An outside review of the trusted-proxy, `X-Forwarded-For`, redirect and cookie rules.
 - Deferred on purpose: VaultMCP and SwiftMCPServer migrations, h2c, WebSockets.
 
 ---
 
-**Last Updated:** 2026-10-29 (reconciled: v0.4.1 released; SwiftPushHub and FleetWatch migrations merged; the 0.1.0 and migration boxes updated; the road to 1.0.0 added; README status rewritten; earlier the same day, Gate A waived by the owner; SwiftPushHub found to be live, not unbuilt; `ijs-dashboard-server` deployed on v0.4.0; v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-10-30 (reconciled: v0.5.0 released: spike S1 proved idle cancellation with no transport change, `allowedHosts`, `cors`; the API-audit item moved to 0.6.0; README status; before that, 2026-10-29: v0.4.1 released; SwiftPushHub and FleetWatch migrations merged; the 0.1.0 and migration boxes updated; the road to 1.0.0 added; README status rewritten; earlier the same day, Gate A waived by the owner; SwiftPushHub found to be live, not unbuilt; `ijs-dashboard-server` deployed on v0.4.0; v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)
