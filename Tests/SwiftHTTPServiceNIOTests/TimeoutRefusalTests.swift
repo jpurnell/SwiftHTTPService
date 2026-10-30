@@ -61,8 +61,10 @@ struct TimeoutRefusalTests {
     @Test("A client that connects and sends nothing is closed after the idle timeout, with nothing written")
     func silentConnection() async throws {
         try await withServer { running, group in
-            let client = try await RawClient.connect(to: running.address, group: group)
+            // The clock starts before the connect: the server's timer starts when it accepts, which can be before the client's
+            // connect call returns, and a bound measured from later would call a correct timer early.
             let began = ContinuousClock.now
+            let client = try await RawClient.connect(to: running.address, group: group)
             #expect(try await client.waitUntilClosed(timeout: .seconds(5)))
             expectWithinBounds(ContinuousClock.now - began, "silent connection closed after")
             #expect(client.received.isEmpty, "documented: nothing is written")
@@ -109,8 +111,8 @@ struct TimeoutRefusalTests {
     func partialBody() async throws {
         try await withServer(handler: { _ in Response(status: .ok) }) { running, group in
             let client = try await RawClient.connect(to: running.address, group: group)
+            let began = ContinuousClock.now             // before the send: the server's timer starts when the head arrives
             try await client.send("POST /x HTTP/1.1\r\nHost: h\r\nContent-Length: 10\r\n\r\nabc")
-            let began = ContinuousClock.now
             let response = try await client.response(timeout: .seconds(5))
             let elapsed = ContinuousClock.now - began
             #expect(response?.status == 408)
@@ -124,11 +126,12 @@ struct TimeoutRefusalTests {
     func idleKeepAlive() async throws {
         try await withServer { running, group in
             let client = try await RawClient.connect(to: running.address, group: group)
+            // From before the request: the server's idle timer starts when the response is written, before the client has it.
+            let began = ContinuousClock.now
             try await client.send("GET /x HTTP/1.1\r\nHost: h\r\n\r\n")
             let first = try await client.response(timeout: .seconds(5))
             #expect(first?.status == 200)
             let written = client.received.count
-            let began = ContinuousClock.now
             #expect(try await client.waitUntilClosed(timeout: .seconds(5)))
             expectWithinBounds(ContinuousClock.now - began, "idle keep-alive closed after")
             #expect(client.received.count == written, "documented: nothing is written when the idle timeout closes")
@@ -142,8 +145,8 @@ struct TimeoutRefusalTests {
         let material = try TestTLS()
         defer { material.cleanUp() }
         try await withServer(tls: material) { running, group in
-            let client = try await RawClient.connect(to: running.address, group: group)       // plain TCP: no ClientHello
             let began = ContinuousClock.now
+            let client = try await RawClient.connect(to: running.address, group: group)       // plain TCP: no ClientHello
             #expect(try await client.waitUntilClosed(timeout: .seconds(5)))
             expectWithinBounds(ContinuousClock.now - began, "TLS handshake (silent) closed after")
         }
@@ -154,10 +157,10 @@ struct TimeoutRefusalTests {
         let material = try TestTLS()
         defer { material.cleanUp() }
         try await withServer(tls: material) { running, group in
+            let began = ContinuousClock.now
             let client = try await RawClient.connect(to: running.address, group: group)
             // A TLS record header (RFC 8446 section 5.1): handshake (22), legacy version 3.1, length 512; then no payload.
             try await client.channel.writeAndFlush(ByteBuffer(bytes: [0x16, 0x03, 0x01, 0x02, 0x00, 0x01])).get()
-            let began = ContinuousClock.now
             #expect(try await client.waitUntilClosed(timeout: .seconds(5)))
             expectWithinBounds(ContinuousClock.now - began, "TLS handshake (partial hello) closed after")
         }
