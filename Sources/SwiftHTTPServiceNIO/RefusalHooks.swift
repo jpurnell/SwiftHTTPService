@@ -10,7 +10,10 @@ import SwiftHTTPService
 ///
 /// None of these carries anything the peer sent: a refusal that repeated a target or a header would be a way to
 /// read the server's insides, or to put text of the peer's choosing in a response.
-public enum TransportRefusal: Sendable, Equatable, CaseIterable, CustomStringConvertible {
+///
+/// The set grows: ``busy`` and ``versionNotSupported`` joined in 0.6.0. A `switch` over it should end in a
+/// `default`, so that a kind added in a minor release is not a compile error in a server that has not met it yet.
+public enum TransportRefusal: Sendable, Hashable, CaseIterable, CustomStringConvertible {
     /// A request that could be read two ways, or is not valid HTTP (a repeated `Host`, a bad `Content-Length`).
     case badRequest
     /// A target that is not strict origin-form.
@@ -77,7 +80,7 @@ public enum TransportRefusal: Sendable, Equatable, CaseIterable, CustomStringCon
 /// is shown only if it is a token of at most 32 characters, and the target has every byte outside visible ASCII
 /// written as `%XX` (so it cannot end a line or carry a control sequence) and is cut at 512 characters, marked
 /// `...`. Nothing here is ever sent back to the peer.
-public struct RefusalRecord: Sendable, Equatable {
+public struct RefusalRecord: Sendable, Hashable {
     /// What was refused.
     public let kind: TransportRefusal
     /// The socket's peer, if the transport knows it.
@@ -91,7 +94,10 @@ public struct RefusalRecord: Sendable, Equatable {
     /// The version of HTTP, if it is known.
     public let httpVersion: HTTPProtocolVersion?
 
-    init(
+    /// Creates a record. The transport makes these; a server's tests make them to exercise the function it gives
+    /// to ``RefusalHooks/record`` without a socket. Nothing is checked or made safe here: the escaping described
+    /// above is the transport's, applied before it builds one.
+    public init(
         kind: TransportRefusal, peerAddress: String?, remoteAddress: String?, method: String?, target: String?,
         httpVersion: HTTPProtocolVersion?
     ) {

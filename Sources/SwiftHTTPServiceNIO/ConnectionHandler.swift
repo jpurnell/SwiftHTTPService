@@ -213,7 +213,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
             return
         }
         state = .responding
-        if !receiving.keepAlive || server.configuration.connections == .closeAfterResponse { closeAfterResponse = true }
+        if !receiving.keepAlive || server.configuration.connectionReuse == .closeAfterResponse { closeAfterResponse = true }
         let handler = server.handler
         let task = Task { try await handler(request) }
         inFlight = task

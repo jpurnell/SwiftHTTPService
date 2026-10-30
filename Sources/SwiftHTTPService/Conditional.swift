@@ -7,7 +7,7 @@ import Foundation
 import HTTPTypes
 
 /// An entity tag: an opaque validator for one version of a representation.
-public struct EntityTag: Sendable, Equatable {
+public struct EntityTag: Sendable, Hashable {
     /// Whether the tag is weak (`W/"..."`).
     public let isWeak: Bool
     /// The text between the quotes.

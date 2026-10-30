@@ -10,7 +10,7 @@ import Testing
 struct ConnectionReuseTests {
 
     private func start(_ connections: ServiceConfiguration.ConnectionReuse, tls: TLSFiles? = nil, handler: @escaping Handler = ok("hi")) async throws -> (HTTPServer, BoundAddress) {
-        let server = HTTPServer(configuration: try ServiceConfiguration(port: 0, tls: tls, connections: connections), handler: handler)
+        let server = HTTPServer(configuration: try ServiceConfiguration(port: 0, tls: tls, connectionReuse: connections), handler: handler)
         return (server, try await server.start())
     }
 

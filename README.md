@@ -2,7 +2,7 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 0.5.0 (2026-10-30), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
+**Status:** 0.6.0 (2026-10-30), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
 in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
 trusted proxies, the PROXY protocol, refusal hooks and TLS reload) exist and are tested. `ijs-dashboard-server` has served on it
@@ -83,8 +83,9 @@ not the value.
 | `maximumBodyBytes` | 1 MiB | 0 to 64 MiB | `413`, close. Checked against `Content-Length` before any body is read |
 | `headerReadTimeout` | 10 s | up to 1 h | `408`, close. A deadline on the whole head from its first byte, so dripping bytes does not extend it |
 | `bodyReadTimeout` | 30 s | up to 1 h | `408`, close |
-| `idleTimeout` | 60 s | up to 1 h | close, nothing written. Applies between requests and before the first byte |
-| `maximumConnections` | 256 | 1 to 100,000 | the connection is closed at once with nothing written |
+| `idleTimeout` | 60 s | up to 1 h | between requests: close, nothing written. On a new connection that has sent nothing: `408`, close |
+| `maximumConnections` | 256 | 1 to 100,000 | plaintext: `503` with `Retry-After`, close, without reading the request (at most 32 such refusals at once, each for at most 2 s; one past that is closed with nothing written). TLS: closed before the handshake, nothing written |
+| `busyRetryAfter` | 1 s | above 0, up to 1 h | the `Retry-After` of that `503`, rounded up to whole seconds |
 | `shutdownGrace` | 10 s | 0 to 10 min | whatever is still open when it ends is closed |
 | `maximumConcurrentStreams` | 100 | 1 to 1000 | HTTP/2 only. Advertised in SETTINGS and enforced; a stream past it is refused |
 | `maximumStreamDuration` | 1 h | up to a day | a streaming response is cut off, whether its producer is writing or idle, and the producer is cancelled |
@@ -101,7 +102,7 @@ is a fixed `application/problem+json` body that never repeats anything the peer 
 (CIDR blocks, nothing trusted by default; the block of every address is refused) and how they speak:
 `.xForwardedFor`, read from the right (the first address that is not itself a trusted proxy is the client), or
 `.proxyProtocol` (version 1 or 2, read before TLS: required from a trusted peer, refused from anyone else who
-begins with one). Forwarded information is believed only from a trusted peer. `ServiceConfiguration(connections:)`
+begins with one). Forwarded information is believed only from a trusted peer. `ServiceConfiguration(connectionReuse:)`
 can ask for `.closeAfterResponse`, for clients that cannot reuse a connection. `HTTPServer(refusals:)` gives the
 transport's own refusals a body of the server's choosing (the status stays the transport's), and a record of each one (who
 asked and, when it was read, the request line, escaped and cut short) for the log, and

@@ -72,7 +72,7 @@ struct IdleCancellationTests {
     }
 
     private func http1(_ connections: ServiceConfiguration.ConnectionReuse, handler: @escaping Handler, leave: (RawClient) async throws -> Void, probe: CancellationProbe) async throws -> Bool {
-        let server = HTTPServer(configuration: try ServiceConfiguration(port: 0, connections: connections), handler: handler)
+        let server = HTTPServer(configuration: try ServiceConfiguration(port: 0, connectionReuse: connections), handler: handler)
         let address = try await server.start()
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let cancelled: Bool

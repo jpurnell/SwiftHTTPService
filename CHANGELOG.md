@@ -6,6 +6,72 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-30
+
+The regression SwiftMoE's migration found, the other wire differences its replay found, and the public API audit that was
+waiting for 1.0. The design and the audit table are `project/plans/proposals/DesignProposal_0.6.0.md`.
+
+### Fixed
+- **A connection past `Limits.maximumConnections` is told, not dropped (owner priority).** The hand-rolled server the kit
+  replaced answered `503` with `Retry-After`; the kit closed such a connection with nothing written. In plaintext it now gets
+  `503 Service Unavailable`, `application/problem+json` (code `service_unavailable`), `Retry-After` and `Connection: close`,
+  written **without reading the request** (no parser, buffer or handler task), then the output side is shut and the input
+  drained until the peer leaves or two seconds pass (closing with unread bytes sends a reset that can destroy the answer).
+  Bounded: at most 32 connections are being refused at once, each lives at most 2 s, and one past that is closed with nothing
+  written, as before. **Over TLS (and so HTTP/2) a connection past the cap is still closed before the handshake, nothing
+  written and no hook called:** an answer needs the handshake, which measured about 7.5 times the CPU of a plaintext refusal
+  (6.9 ms against 0.92 ms per connection, in-process, debug build), spent on exactly the connections there is no room for; an
+  `h2` client could in any case only be answered with HTTP/2 frames. Put TLS in a proxy in front for clients that must be told.
+  With the PROXY protocol the refusal does not read the balancer's header, so the `503` goes to the balancer.
+- **A connection that connects and sends nothing is answered `408`** at `idleTimeout` (it was closed silently; the old server
+  answered). A keep-alive connection that goes quiet after a request is still closed silently. A request whose body stops
+  arriving was already answered `408` at `bodyReadTimeout`; what SwiftMoE saw closed was a peer that had gone, to which nothing
+  can be written.
+- **`HTTP/2.0` (any major version but 1) in an HTTP/1.1 request line is `505 HTTP Version Not Supported`**, not `400`.
+  `HTTP/1.2`, `HTTP/2`, `HTTP/abc` stay `400`.
+- **The `413` status line reads `Content Too Large`** (RFC 9110; NIO still says `Payload Too Large`). Also `416 Range Not
+  Satisfiable` and `422 Unprocessable Content`, for a handler's own statuses as well.
+- Left, with reasons: no `Host` on HTTP/1.1 stays `400` (RFC 9112); a body declared over the bound is `413` before any credential
+  check, because a transport cannot read a credential from a body it refuses.
+
+### Added
+- `Limits.busyRetryAfter` (`Duration`, default 1 s, above zero and at most an hour), the `Retry-After` of that `503`, rounded
+  up to whole seconds. `TransportRefusal.busy` (status 503, code `service_unavailable`), through `RefusalHooks` like the other
+  transport refusals: `respond` shapes it (status and `Retry-After` stay the transport's), `observe` counts it, `record` sees
+  it with the peer and **no request line**. `TransportRefusal.versionNotSupported` (505, `http_version_not_supported`).
+- `RefusalRecord.init` is public, so a server's `record` function can be tested without a socket.
+
+### Changed (audit; every change is source-compatible except the rename, which is shimmed)
+- **`ServiceConfiguration.connections` is now `connectionReuse`**, for both the property and the initialiser label (it read as
+  a count beside `maximumConnections`). The old names remain for **this release only** as `@available(*, deprecated, renamed:)`
+  shims with unchanged behaviour, so SwiftPushHub, FleetWatch and ijs-dashboard-server compile unchanged (with a deprecation
+  warning where `connections:` is used). They will be removed in 0.7.0 or at 1.0.0, whichever comes first.
+- `Hashable` added to `TransportRefusal`, `RefusalRecord`, `BoundAddress`, `QueryItem`, `HTTPProtocolVersion`, `EntityTag`,
+  `RateLimit`, `StreamError`, `Cookie.SameSite` and `ServiceConfiguration`'s `Forwarding`, `ConnectionReuse` and `Protocols`.
+- `Request.init` throws `RequestError` (typed), like every other throwing initialiser in the kit.
+- `maximumConnections`, `HTTPServer` and `TransportRefusal` documentation describe the busy refusal; `TransportRefusal` now says
+  the set grows and a `switch` over it should end in `default`.
+
+### Breaking, and what to do
+- **An exhaustive `switch` over `TransportRefusal` without a `default` no longer compiles** (new cases `.busy` and
+  `.versionNotSupported`). Of the four consumers only SwiftMoE has one (`ChatService.refusal(for:)`); it needs those two cases,
+  or a `default`. SwiftPushHub, FleetWatch and ijs-dashboard-server compile unchanged.
+- Behaviour: a silent new connection now receives a `408` where it was closed silently, and a connection over the cap in
+  plaintext receives a `503` where it received nothing.
+
+### Verified
+- 493 tests (201 core, 292 transport); the new ones are real-socket tests of the refusal, its bounds, its hooks, TLS, the `408`,
+  the `505` (including across packet splits and on a second request), and the phrases.
+- **17 hand mutants of the new code, 16 killed, 1 equivalent.** Killed: cap boundary off by one; refusal cap removed; refusal
+  cap off by one; `Retry-After` omitted (hooked body, and default body); `Retry-After` rounded down; hooks bypassed; record
+  claiming a request line; no refusal deadline; no half-close after the write; refusal slot never released; TLS connections
+  allowed to be refused; `Connection: close` omitted; `busyRetryAfter` not validated; a silent first connection closed silently;
+  major version 3 not refused. **Equivalent:** forwarding a refused connection's bytes down the pipeline instead of dropping
+  them (the handler is last, NIO's tail discards them).
+- Consumers built against this working copy by a local-path override in scratch copies: SwiftPushHub, FleetWatch and
+  ijs-dashboard-server compile unchanged; SwiftMoE fails at the one exhaustive `switch` described above and nowhere else.
+
+
 ## [0.5.0] - 2026-10-30
 
 For the SwiftMoE migration (its `DesignProposal_HTTPServerOnSwiftHTTPService.md`). Nothing a caller of 0.4.1 writes
@@ -323,7 +389,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.3.0...v0.4.0

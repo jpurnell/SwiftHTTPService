@@ -67,6 +67,14 @@ public struct Limits: Sendable, Equatable {
     /// Default 60 s.
     public var idleTimeout: Duration
     /// The most connections served at once. 1 to 100,000. Default 256.
+    ///
+    /// A connection past the cap is not served. In plaintext it is told so: `503 Service Unavailable` with
+    /// `Retry-After` (``busyRetryAfter``) as problem+json (code `service_unavailable`), written without reading the
+    /// request, and closed. The refusing is itself bounded: at most 32 connections are being refused at once, each
+    /// for at most two seconds, and one past that is closed with nothing written. Over TLS a connection past the
+    /// cap is always closed before the handshake, with nothing written, because an answer would cost the handshake
+    /// (and for HTTP/2 there is no HTTP-level answer before it). A server that wants clients to be told over TLS
+    /// terminates TLS in front of this one.
     public var maximumConnections: Int
     /// How long a graceful shutdown lets in-flight requests finish. Zero to ten minutes. Default 10 s.
     public var shutdownGrace: Duration
@@ -146,7 +154,11 @@ public struct ServiceConfiguration: Sendable, Equatable {
     /// Which versions of HTTP the server speaks.
     public let protocols: Protocols
     /// Whether a connection is kept for the next request.
-    public let connections: ConnectionReuse
+    public let connectionReuse: ConnectionReuse
+    /// The former name of ``connectionReuse``: `connections` read as if it were a count (see
+    /// ``Limits/maximumConnections``). Kept for one release.
+    @available(*, deprecated, renamed: "connectionReuse")
+    public var connections: ConnectionReuse { connectionReuse }
     /// The proxies whose word about a client is believed: nobody, unless named.
     public let trustedProxies: [NetworkBlock]
     /// How a trusted proxy tells the server who the client is.
@@ -156,7 +168,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
     ///
     /// Forwarded information is believed only if the socket's peer is on ``trustedProxies``; from anyone else it is
     /// ignored (or, for the PROXY protocol, refused), because a client can write any header it likes.
-    public enum Forwarding: Sendable, Equatable {
+    public enum Forwarding: Sendable, Hashable {
         /// The client is the socket's peer. The default.
         case none
         /// The `X-Forwarded-For` header, read from the right: the first address that is not itself a trusted proxy.
@@ -168,7 +180,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
     /// Whether the server keeps a connection open for the next request.
     ///
     /// This is about HTTP/1.1. A stream in HTTP/2 is one request already, so the setting changes nothing there.
-    public enum ConnectionReuse: Sendable, Equatable {
+    public enum ConnectionReuse: Sendable, Hashable {
         /// Keep a connection open between requests, until the client or the idle timeout ends it. The default.
         case keepAlive
         /// Answer with `Connection: close` and close after each response, whatever the client asked. For a client
@@ -178,7 +190,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
 
     /// Which versions of HTTP a server speaks. HTTP/2 is only ever negotiated over TLS (through ALPN):
     /// plaintext is HTTP/1.1, and there is no `h2c`.
-    public enum Protocols: Sendable, Equatable {
+    public enum Protocols: Sendable, Hashable {
         /// HTTP/1.1 only.
         case http1
         /// HTTP/2 where the peer negotiates it, otherwise HTTP/1.1.
@@ -189,7 +201,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
     ///
     /// - Throws: ``ConfigurationError`` naming the first field that is refused.
     public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits(), protocols: Protocols = .http1AndHTTP2,
-        connections: ConnectionReuse = .keepAlive, trustedProxies: [String] = [], forwarding: Forwarding = .none
+        connectionReuse: ConnectionReuse = .keepAlive, trustedProxies: [String] = [], forwarding: Forwarding = .none
     ) throws(ConfigurationError) {
         try Self.validate(host: host)
         if let tls {
@@ -206,9 +218,20 @@ public struct ServiceConfiguration: Sendable, Equatable {
         self.tls = tls
         self.limits = limits
         self.protocols = protocols
-        self.connections = connections
+        self.connectionReuse = connectionReuse
         self.trustedProxies = blocks
         self.forwarding = forwarding
+    }
+
+    /// Creates a configuration with the former label `connections:`. Kept for one release; `connections:` is
+    /// required here so that a call without it means the initialiser above.
+    @available(*, deprecated, renamed: "init(host:port:tls:limits:protocols:connectionReuse:trustedProxies:forwarding:)")
+    public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits(), protocols: Protocols = .http1AndHTTP2,
+        connections: ConnectionReuse, trustedProxies: [String] = [], forwarding: Forwarding = .none
+    ) throws(ConfigurationError) {
+        try self.init(
+            host: host, port: port, tls: tls, limits: limits, protocols: protocols, connectionReuse: connections,
+            trustedProxies: trustedProxies, forwarding: forwarding)
     }
 
     // MARK: Validation

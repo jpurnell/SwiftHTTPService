@@ -28,7 +28,7 @@ public enum HTTPServerError: Error, Equatable, Sendable {
 }
 
 /// The address a server is listening on.
-public struct BoundAddress: Sendable, Equatable {
+public struct BoundAddress: Sendable, Hashable {
     /// The IP address, as text.
     public let host: String
     /// The port. With a configured port of zero, the one the system chose.
@@ -57,7 +57,8 @@ public struct BoundAddress: Sendable, Equatable {
 ///
 /// Every limit in ``Limits`` is enforced: the request line and headers are bounded as they arrive, a body
 /// is bounded by its declared or counted size, a header, a body and a keep-alive wait each have a deadline,
-/// and the number of open connections is capped. Requests that could be read two ways (a `Content-Length`
+/// and the number of open connections is capped (a connection past the cap is answered `503` in plaintext, closed
+/// unanswered over TLS; see ``Limits/maximumConnections``). Requests that could be read two ways (a `Content-Length`
 /// with a `Transfer-Encoding`, a duplicate or malformed `Content-Length`, folded or malformed headers) are
 /// refused. See ``ConnectionHandler`` for what is deliberately not supported.
 public final class HTTPServer: Sendable {

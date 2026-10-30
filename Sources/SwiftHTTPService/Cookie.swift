@@ -31,7 +31,7 @@ public enum CookieError: Error, Equatable, Sendable {
 /// or a backslash; `SameSite=None` without `Secure`; a `__Host-` cookie with a `Domain` or a path other than `/`.
 public struct Cookie: Sendable, Equatable {
     /// The `SameSite` attribute.
-    public enum SameSite: String, Sendable, Equatable {
+    public enum SameSite: String, Sendable, Hashable {
         /// Never sent with a cross-site request.
         case strict = "Strict"
         /// Sent with a cross-site top-level navigation, not with a cross-site sub-request.

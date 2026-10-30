@@ -30,7 +30,7 @@ struct ServiceConfigurationTests {
         #expect(limits.streamWriteTimeout == .seconds(30))
         #expect(limits.busyRetryAfter == .seconds(1))
         #expect(configuration.protocols == .http1AndHTTP2)  // design H2
-        #expect(configuration.connections == .keepAlive)    // connections are reused unless asked otherwise
+        #expect(configuration.connectionReuse == .keepAlive)    // connections are reused unless asked otherwise
         #expect(configuration.trustedProxies.isEmpty)       // nothing is trusted unless named
         #expect(configuration.forwarding == .none)
     }
@@ -57,9 +57,9 @@ struct ServiceConfigurationTests {
 
     @Test("The connection mode can be set to close after each response, and nothing else is changed by it")
     func connectionsSet() throws {
-        let closing = try ServiceConfiguration(connections: .closeAfterResponse)
+        let closing = try ServiceConfiguration(connectionReuse: .closeAfterResponse)
         let defaults = try ServiceConfiguration()
-        #expect(closing.connections == .closeAfterResponse)
+        #expect(closing.connectionReuse == .closeAfterResponse)
         #expect(closing.host == defaults.host)
         #expect(closing.port == defaults.port)
         #expect(closing.limits == defaults.limits)
@@ -236,6 +236,25 @@ struct ServiceConfigurationTests {
     func edgesAccepted(_ edgeCase: EdgeCase) throws {
         let configuration = try edgeCase.build()
         #expect(!configuration.host.isEmpty)
+    }
+
+    // MARK: The name `connections`, kept for one release
+
+    // The old label and property still compile (as deprecated) and mean exactly what they meant. The test is itself
+    // deprecated so that using the old names in it is not a warning.
+    @available(*, deprecated, message: "Exercises the deprecated names on purpose.")
+    @Test("The deprecated connections label and property still work and agree with connectionReuse")
+    func deprecatedConnectionsName() throws {
+        let closing = try ServiceConfiguration(connections: .closeAfterResponse)
+        #expect(closing.connectionReuse == .closeAfterResponse)
+        #expect(closing.connections == .closeAfterResponse)
+        #expect(closing == (try ServiceConfiguration(connectionReuse: .closeAfterResponse)))
+        let withOthers = try ServiceConfiguration(port: 9, protocols: .http1, connections: .keepAlive, trustedProxies: ["10.0.0.1"], forwarding: .xForwardedFor)
+        #expect(withOthers.port == 9)
+        #expect(withOthers.protocols == .http1)
+        #expect(withOthers.connections == .keepAlive)
+        #expect(withOthers.forwarding == .xForwardedFor)
+        #expect(withOthers.trustedProxies.count == 1)
     }
 
     // MARK: The Retry-After a busy refusal carries

@@ -23,7 +23,7 @@ public enum RateLimitError: Error, Equatable, Sendable {
 /// holds. The limit uses the generic cell rate algorithm: one request costs `interval / requests` of credit
 /// (the emission interval, T), and a bucket holds `burst * T`. All of it is whole nanoseconds, so there is no
 /// floating point to round and one integer to keep for each client.
-public struct RateLimit: Sendable, Equatable {
+public struct RateLimit: Sendable, Hashable {
     /// The sustained number of requests per ``interval``.
     public let requests: Int
     /// The interval the rate is counted over.

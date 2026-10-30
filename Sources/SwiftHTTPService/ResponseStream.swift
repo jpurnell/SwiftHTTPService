@@ -7,7 +7,7 @@ import Foundation
 import HTTPTypes
 
 /// Why a stream ended before its producer finished.
-public enum StreamError: Error, Equatable, Sendable, CustomStringConvertible {
+public enum StreamError: Error, Hashable, Sendable, CustomStringConvertible {
     /// The connection or the stream is closed: the peer went away, the server is shutting down, or the transport
     /// ended it. Further writes cannot succeed.
     case closed

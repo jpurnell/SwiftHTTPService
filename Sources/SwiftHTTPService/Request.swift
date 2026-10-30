@@ -13,7 +13,7 @@ public enum RequestError: Error, Equatable, Sendable {
 }
 
 /// One `name=value` pair of a query string, decoded. `value` is nil for a bare `name`.
-public struct QueryItem: Sendable, Equatable {
+public struct QueryItem: Sendable, Hashable {
     /// The decoded name.
     public let name: String
     /// The decoded value, or nil when the pair had no `=`.
@@ -30,7 +30,7 @@ public struct QueryItem: Sendable, Equatable {
 ///
 /// A handler should not need it: the same handler serves every version. It is here for what does, such as a
 /// log line, a metric, or a refusal that only makes sense for one.
-public enum HTTPProtocolVersion: Sendable, Equatable, CustomStringConvertible {
+public enum HTTPProtocolVersion: Sendable, Hashable, CustomStringConvertible {
     /// HTTP/1.0.
     case http1_0
     /// HTTP/1.1.
@@ -90,7 +90,7 @@ public struct Request: Sendable {
     public init(
         method: HTTPRequest.Method, target: String, headers: HTTPFields, body: Data, remoteAddress: String? = nil,
         httpVersion: HTTPProtocolVersion = .http1_1, peerAddress: String? = nil
-    ) throws {
+    ) throws(RequestError) {
         let parts = try Self.parse(target)
         self.method = method
         self.target = target
