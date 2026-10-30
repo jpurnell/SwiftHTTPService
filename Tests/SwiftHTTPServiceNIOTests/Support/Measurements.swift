@@ -28,3 +28,26 @@ struct SplitMix64: RandomNumberGenerator, Sendable {
         return z ^ (z >> 31)
     }
 }
+
+extension SplitMix64 {
+    /// A uniformly chosen element of a non-empty array.
+    mutating func pick<T>(_ items: [T]) -> T {
+        items[Int.random(in: 0..<items.count, using: &self)]
+    }
+
+    /// An integer in `range`.
+    mutating func int(_ range: ClosedRange<Int>) -> Int {
+        Int.random(in: range, using: &self)
+    }
+
+    /// True with probability `percent` out of 100.
+    mutating func chance(_ percent: Int) -> Bool {
+        Int.random(in: 0..<100, using: &self) < percent
+    }
+}
+
+/// `value` in base 16, upper case, left-padded with zeros to `width` digits.
+func paddedHex(_ value: UInt64, width: Int, uppercase: Bool = true) -> String {
+    let digits = String(value, radix: 16, uppercase: uppercase)
+    return String(repeating: "0", count: max(width - digits.count, 0)) + digits
+}
