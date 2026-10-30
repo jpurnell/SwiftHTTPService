@@ -1,6 +1,6 @@
 # Migration Plan — servers that hand-roll HTTP
 
-**Status:** proposed 2026-10-27, for the owner. **Why:** the Stack Map's `http-service` gap names a missing
+**Status:** proposed 2026-10-27, for the owner. **Progress (2026-10-29):** ijs-dashboard-server on 0.4.0 (deployed); SwiftPushHub and FleetWatch migrated on kit 0.4.1 and merged to `main`, their deploys pending the owner's runbooks; VaultMCP and SwiftMCPServer not started. **Why:** the Stack Map's `http-service` gap names a missing
 kit; this repository is it. A survey of the workspace found five servers that each carry their own HTTP
 listener, router and limits. The owner asked for plans to move them.
 

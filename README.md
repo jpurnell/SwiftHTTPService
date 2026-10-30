@@ -2,10 +2,13 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** pre-0.1, untagged, private. The core (request, response, problem, middleware, router, conditional
-requests, health route, validated configuration) and the HTTP/1.1 transport exist and are tested. ~~nothing runs on
-them yet.~~ Its first consumer, `ijs-dashboard-server`, has served on it since 2026-10-28 (Teletran 2), naming it by
-path because there is no release yet; a 0.1.0 is needed. Design: `project/plans/proposals/DesignProposal_SwiftHTTPService.md`.
+**Status:** 0.4.1 (2026-10-29), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
+in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
+validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
+trusted proxies, the PROXY protocol, refusal hooks and TLS reload) exist and are tested. `ijs-dashboard-server` has served on it
+since 2026-10-28 (Teletran 2). SwiftPushHub and FleetWatch have been migrated onto it (merged 2026-10-29; their deploys
+are the owner's, per each repository's runbook). **Linux is untested**; macOS 14 or newer is what is built and run.
+Design: `project/plans/proposals/DesignProposal_SwiftHTTPService.md`.
 
 ## What it is
 
