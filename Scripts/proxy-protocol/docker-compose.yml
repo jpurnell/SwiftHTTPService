@@ -1,0 +1,13 @@
+# HAProxy with send-proxy-v2 / send-proxy in front of the kit's test server, for Linux hosts.
+#
+# NOT YET RUN: Docker was not available where this was written. It uses the host network, so HAProxy reaches the kit's
+# loopback-only server on 127.0.0.1:18080; that works on Linux and not on Docker Desktop for macOS, where the container
+# has its own network (use a locally installed haproxy there). Scripts/proxy-protocol-check.sh starts HAProxy itself, from
+# a local binary or from docker; this file is the same thing for running it by hand:
+#   docker compose -f Scripts/proxy-protocol/docker-compose.yml up
+services:
+  haproxy:
+    image: haproxy:3.0
+    network_mode: host
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro

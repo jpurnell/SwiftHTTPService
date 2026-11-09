@@ -1,0 +1,90 @@
+# Continuous integration: build and test on Linux (a Swift 6.2 container) and on macOS.
+#
+# NOT YET RUN. This file was written where Actions cannot run, and there was no container runtime to try the Linux
+# build locally; the first run on GitHub is the first evidence either platform gets from CI.
+#
+# The private dependency. Package.swift depends on the owner's private repository SwiftTLSKit by an SSH URL
+# (git@github.com:jpurnell/SwiftTLSKit.git). Every other dependency is public. To let the runners resolve it:
+#   1. Make an SSH key pair used for nothing else:   ssh-keygen -t ed25519 -N '' -C 'swifthttpservice-ci' -f ci_key
+#   2. Add ci_key.pub as a read-only DEPLOY KEY on github.com/jpurnell/SwiftTLSKit (Settings, Deploy keys; leave "Allow
+#      write access" off).
+#   3. Add the private half (the whole contents of ci_key) as an Actions secret of THIS repository named
+#      SWIFTTLSKIT_DEPLOY_KEY, then delete the local ci_key.
+# A deploy key reaches one repository, which is the point: a token or a personal key would reach all of them. If
+# SwiftTLSKit ever gains a private dependency of its own, that needs a second key, and the job will say so by failing
+# at "swift package resolve". Pull requests from forks get no secrets, so they cannot resolve the dependency: the
+# key step says so instead of failing obscurely.
+#
+# macOS: the manifest says swift-tools-version 6.2, which needs Xcode 26. "macos-latest" may still carry an older
+# default Xcode, so the job selects the newest Xcode installed on the image and prints the compiler it got.
+#
+# quality-gate is not installed on the runners (it is the owner's tool, and the git hooks run it): CI builds and tests.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (swift:6.2)
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools the container may lack (git is in the image; ssh may not be)
+        run: apt-get update && apt-get install -y --no-install-recommends openssh-client ca-certificates
+      - name: Access to the private SwiftTLSKit
+        env:
+          DEPLOY_KEY: ${{ secrets.SWIFTTLSKIT_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then echo "SWIFTTLSKIT_DEPLOY_KEY is not set (a fork's pull request has no secrets); the dependency cannot be fetched."; exit 1; fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/ci_key && chmod 600 ~/.ssh/ci_key
+          ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts
+          git config --global core.sshCommand "ssh -i $HOME/.ssh/ci_key -o IdentitiesOnly=yes"
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: linux-swift6.2-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: linux-swift6.2-
+      - run: swift --version
+      - run: swift package resolve
+      - run: swift build --build-tests
+      - run: swift test
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Newest Xcode on the image (the manifest needs Swift 6.2)
+        run: |
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$newest" ]; then sudo xcode-select -s "$newest"; fi
+          swift --version
+      - name: Access to the private SwiftTLSKit
+        env:
+          DEPLOY_KEY: ${{ secrets.SWIFTTLSKIT_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then echo "SWIFTTLSKIT_DEPLOY_KEY is not set (a fork's pull request has no secrets); the dependency cannot be fetched."; exit 1; fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/ci_key && chmod 600 ~/.ssh/ci_key
+          ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts
+          git config --global core.sshCommand "ssh -i $HOME/.ssh/ci_key -o IdentitiesOnly=yes"
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: macos-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: macos-
+      - run: swift package resolve
+      - run: swift build --build-tests
+      - run: swift test
