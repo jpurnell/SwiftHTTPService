@@ -58,16 +58,18 @@ struct TimeoutRefusalTests {
 
     // MARK: HTTP/1.1
 
-    @Test("A client that connects and sends nothing is closed after the idle timeout, with nothing written")
+    @Test("A client that connects and sends nothing is answered 408 and closed after the idle timeout")
     func silentConnection() async throws {
         try await withServer { running, group in
             // The clock starts before the connect: the server's timer starts when it accepts, which can be before the client's
             // connect call returns, and a bound measured from later would call a correct timer early.
             let began = ContinuousClock.now
             let client = try await RawClient.connect(to: running.address, group: group)
-            #expect(try await client.waitUntilClosed(timeout: .seconds(5)))
-            expectWithinBounds(ContinuousClock.now - began, "silent connection closed after")
-            #expect(client.received.isEmpty, "documented: nothing is written")
+            let response = try await client.response(timeout: .seconds(5))
+            expectWithinBounds(ContinuousClock.now - began, "silent connection answered 408 after")
+            // Since 0.6.0 a silent first connection is told, not dropped.
+            #expect(response?.status == 408)
+            #expect(try await client.waitUntilClosed(timeout: .seconds(2)))
         }
     }
 
