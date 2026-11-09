@@ -49,6 +49,55 @@ enum PipelineBuilder {
         }
     }
 
+    /// The pipeline of a connection past the cap: the 503, and nothing else.
+    ///
+    /// Plaintext is answered at once without reading. Over TLS the handshake is done first (a peer cannot be given an
+    /// answer before it), and then the version it negotiated decides the answer: HTTP/1.1 gets the same bytes as a
+    /// plaintext connection, h2 gets a connection that answers its first stream and ends (``BusyStreamHandler``). The
+    /// handshake is bounded by the same deadline as the answer, and the number of such connections by
+    /// ``ConnectionRegistry/defaultTLSRefusalSlots``.
+    static func installBusyFuture(on channel: any Channel, context: ServerContext, tls: ReloadableServerTLS?) -> EventLoopFuture<Void> {
+        channel.eventLoop.submit {
+            let operations = channel.pipeline.syncOperations
+            guard let tls else {
+                try operations.addHandler(BusyRefusalHandler(server: context))
+                return
+            }
+            try tls.addHandler(to: operations)
+            try operations.addHandler(HandshakeDeadline(timeout: BusyRefusalHandler.deadline))
+            try operations.addHandler(ApplicationProtocolNegotiationHandler { result, channel in
+                let negotiated: String?
+                switch result {
+                case .negotiated(let name): negotiated = name
+                case .fallback: negotiated = nil
+                }
+                return channel.eventLoop.makeCompletedFuture {
+                    let operations = channel.pipeline.syncOperations
+                    switch ProtocolNegotiation.select(negotiated: negotiated, configured: context.configuration.protocols) {
+                    case .http1: try operations.addHandler(BusyRefusalHandler(server: context))
+                    case .http2: try addBusyHTTP2(to: operations, context: context)
+                    case nil: channel.close(promise: nil)
+                    }
+                }
+            })
+        }
+    }
+
+    /// An HTTP/2 connection that answers its first stream with the busy refusal and closes.
+    private static func addBusyHTTP2(to operations: ChannelPipeline.SynchronousOperations, context: ServerContext) throws {
+        try operations.addHandler(RefusalDeadline(timeout: BusyRefusalHandler.deadline))
+        var connection = NIOHTTP2Handler.ConnectionConfiguration()
+        // One stream is all that is answered, and the answer is small.
+        connection.initialSettings = [HTTP2Setting(parameter: .maxConcurrentStreams, value: 1)]
+        _ = try operations.configureHTTP2Pipeline(
+            mode: .server, connectionConfiguration: connection, streamConfiguration: .init(),
+            inboundStreamInitializer: { stream in
+                stream.eventLoop.makeCompletedFuture {
+                    try stream.pipeline.syncOperations.addHandler(BusyStreamHandler(server: context))
+                }
+            })
+    }
+
     /// The same, awaited.
     static func install(on channel: any Channel, context: ServerContext, tls: ReloadableServerTLS?) async throws {
         try await installFuture(on: channel, context: context, tls: tls).get()
@@ -127,5 +176,25 @@ final class HandshakeDeadline: ChannelInboundHandler, RemovableChannelHandler, @
             deadline = nil
         }
         context.fireUserInboundEventTriggered(event)
+    }
+}
+
+/// Closes a connection once its time is up, whatever it is doing.
+// Justification: the deadline task of a busy-refused h2 connection is set in handlerAdded and cancelled in handlerRemoved, both on the channel's loop.
+final class RefusalDeadline: ChannelInboundHandler, RemovableChannelHandler, @unchecked Sendable {
+    typealias InboundIn = NIOAny
+    private let timeout: TimeAmount
+    private var deadline: Scheduled<Void>?
+
+    init(timeout: TimeAmount) { self.timeout = timeout }
+
+    func handlerAdded(context: ChannelHandlerContext) {
+        let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
+        deadline = context.eventLoop.scheduleTask(in: timeout) { loopContext.value.close(promise: nil) }
+    }
+
+    func handlerRemoved(context: ChannelHandlerContext) {
+        deadline?.cancel()
+        deadline = nil
     }
 }

@@ -256,8 +256,8 @@ struct BusyRefusalTests {
 
     // MARK: Over TLS
 
-    @Test("Over TLS a connection past the cap is closed before the handshake: nothing is decrypted, nothing is written, and no hook is called")
-    func tlsIsClosedBeforeTheHandshake() async throws {
+    @Test("Over TLS a connection past the cap completes the handshake and is answered 503 with Retry-After, in HTTP/1.1 and in h2, and the hook is told once each")
+    func tlsIsAnswered() async throws {
         let material = try TestTLS()
         defer { material.cleanUp() }
         let seen = NIOLockedValueBox<[TransportRefusal]>([])
@@ -270,17 +270,55 @@ struct BusyRefusalTests {
             try await held.send(Self.get)
             #expect(try await held.response()?.status == 200)
 
-            // A client that offers HTTP/2 is treated the same: there is no HTTP-level answer before the handshake.
-            for offered in [["http/1.1"], ["h2", "http/1.1"]] {
-                let refused = try await RawClient.connect(to: address, group: group, tls: try material.clientContext(applicationProtocols: offered))
-                #expect(try await refused.waitUntilClosed(), "a connection over the cap was kept")
-                #expect(refused.received.isEmpty, "a connection over the cap was written to")
-                #expect(!refused.handshakeCompleted, "the handshake was completed for a connection over the cap")
-            }
+            let refused = try await RawClient.connect(to: address, group: group, tls: try material.clientContext(applicationProtocols: ["http/1.1"]))
+            let answer = try #require(try await refused.response())
+            #expect(answer.status == 503)
+            #expect(answer.header("Retry-After") == "1")
+            #expect(answer.header("Content-Type") == "application/problem+json")
+            #expect(answer.body == Refusal.serviceUnavailable.body)
+            #expect(try await refused.waitUntilClosed(), "a refused connection was kept")
+            #expect(refused.negotiatedProtocol == "http/1.1")
+
+            let h2 = try await H2Client.connect(to: address, group: group, tls: try material.clientContext(applicationProtocols: ["h2", "http/1.1"]))
+            let response = try await h2.request("GET", "/x")
+            #expect(h2.negotiatedProtocol == "h2")
+            #expect(response.status == 503)
+            #expect(response.header("retry-after") == "1")
+            #expect(response.ended, "the h2 answer was cut off")
             #expect(!held.isClosed)
+            await h2.close()
             await held.close()
         }
         await server.shutdown()
-        #expect(seen.withLockedValue { $0 }.isEmpty)
+        #expect(seen.withLockedValue { $0 } == [.busy, .busy])
+    }
+
+    @Test("Over TLS a refused connection that never completes the handshake is closed within the refusal deadline")
+    func tlsRefusalIsBounded() async throws {
+        let material = try TestTLS()
+        defer { material.cleanUp() }
+        let server = HTTPServer(
+            configuration: try ServiceConfiguration(port: 0, tls: material.files, limits: Limits(maximumConnections: 1)), handler: ok())
+        let address = try await server.start()
+        try await withClientGroup { group in
+            let held = try await RawClient.connect(to: address, group: group, tls: try material.clientContext())
+            try await held.send(Self.get)
+            #expect(try await held.response()?.status == 200)
+
+            // A plain TCP connection that says nothing: it is past the cap, and a TLS handshake never starts.
+            let silent = try await RawClient.connect(to: address, group: group)
+            let began = ContinuousClock.now
+            #expect(try await silent.waitUntilClosed(timeout: .seconds(6)))
+            // TIMING: the refusal's whole life is bounded by BusyRefusalHandler.deadline (2 s) plus scheduling slack.
+            #expect(ContinuousClock.now - began < .seconds(4), "a stalled TLS refusal outlived its deadline")
+            await held.close()
+        }
+        await server.shutdown()
+    }
+
+    @Test("The TLS refusal slots are positive and fewer than the plaintext ones")
+    func tlsRefusalSlots() {
+        #expect(ConnectionRegistry.defaultTLSRefusalSlots > 0)
+        #expect(ConnectionRegistry.defaultTLSRefusalSlots < ConnectionRegistry.defaultRefusalSlots, "a TLS refusal costs about 7.5 times a plaintext one")
     }
 }

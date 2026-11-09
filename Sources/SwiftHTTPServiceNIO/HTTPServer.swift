@@ -144,7 +144,12 @@ public final class HTTPServer: Sendable {
             throw HTTPServerError.exposedPlaintext(host: configuration.host)
         }
         let group = MultiThreadedEventLoopGroup(numberOfThreads: max(1, min(System.coreCount, 4)))
-        let registry = ConnectionRegistry(maximum: configuration.limits.maximumConnections)
+        let registry = ConnectionRegistry(
+            maximum: configuration.limits.maximumConnections,
+            refusalSlots: tls == nil ? ConnectionRegistry.defaultRefusalSlots : ConnectionRegistry.defaultTLSRefusalSlots)
+        // Behind the PROXY protocol over TLS the balancer's header comes before the handshake, and a refusal reads nothing:
+        // there a connection past the cap is closed unanswered.
+        let canAnswerBusy = !(tls != nil && configuration.forwarding == .proxyProtocol)
         // In a box so that whoever stops the server can let go of it before the loops stop (see performShutdown).
         let quiescing = NIOLockedValueBox<ServerQuiescingHelper?>(ServerQuiescingHelper(group: group))
         let context = self.context
@@ -159,18 +164,16 @@ public final class HTTPServer: Sendable {
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
-                // Over TLS an answer costs a handshake, which is the one thing a server at its cap should not be made
-                // to do for strangers (and HTTP/2 could not be answered before it at all): there the connection is
-                // closed unanswered. In plaintext it is told, cheaply, that the server is busy (BusyRefusalHandler).
-                switch registry.admit(channel, mayRefuse: tls == nil) {
+                // Past the cap a connection is told, with as little work as the server can manage: in plaintext at once and
+                // unread (BusyRefusalHandler); over TLS after the handshake, in HTTP/1.1 or h2 as negotiated, from a smaller set of
+                // slots because the handshake is the expensive part (PipelineBuilder.installBusyFuture).
+                switch registry.admit(channel, mayRefuse: canAnswerBusy) {
                 case .admitted:
                     channel.closeFuture.whenComplete { _ in registry.remove(channel) }
                     return PipelineBuilder.installFuture(on: channel, context: context, tls: tls)
                 case .refuse:
                     channel.closeFuture.whenComplete { _ in registry.endRefusal() }
-                    return channel.eventLoop.submit {
-                        try channel.pipeline.syncOperations.addHandler(BusyRefusalHandler(server: context))
-                    }
+                    return PipelineBuilder.installBusyFuture(on: channel, context: context, tls: tls)
                 case .drop:
                     return channel.eventLoop.makeFailedFuture(ChannelError.ioOnClosedChannel)
                 }

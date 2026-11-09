@@ -6,6 +6,37 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-09
+
+The shim removed, a connection past the cap told over TLS too, and the evidence for 1.0.0 merged: the rig that proves the
+paths that had never been run. SwiftPushHub and FleetWatch have run on the kit since 0.4.1 with no transport fault.
+
+### Changed (breaking)
+- **The deprecated `ServiceConfiguration.connections` property and `connections:` initialiser label are removed** (renamed
+  `connectionReuse` in 0.6.0, with a shim promised for one release). **FleetWatch**
+  (`FleetService.swift`) still uses the old label and needs the one-word change before it takes 0.7.0.
+
+### Added
+- **A connection past `Limits.maximumConnections` is answered `503` with `Retry-After` over TLS as well.** After the
+  handshake: an HTTP/1.1 peer gets the same bytes as in plaintext; an `h2` peer gets a connection that answers its first
+  stream and sends `GOAWAY` (`BusyStreamHandler`). The hooks are called (`TransportRefusal.busy`; for `h2` when the first
+  stream opens). The handshake is the cost 0.6.0 declined to spend (about 7.5 times a plaintext refusal), so the bound is
+  tighter: at most **8** such refusals at once (plaintext 32), the handshake and the answer each held to 2 s. Behind the PROXY
+  protocol over TLS a connection past the cap is still closed with nothing written (the header must be read before the
+  handshake, and a refusal reads nothing). Reverses the 0.6.0 decision (A) by the owner's request.
+- Tests that run the paths that had not been run: timeouts over a real socket, seeded fuzzing of the request target, form,
+  cookie, CIDR, PROXY v1/v2 and the HTTP/1.1 head (no defect found), HTTP/2 floods and flow-control exhaustion and the cap
+  under load (every defence held), a soak harness (`SOAK_SECONDS`, `Scripts/soak.sh`), TLS reload under traffic, the PROXY
+  protocol behind HAProxy (config and script written, not run against HAProxy; the emulated path was run).
+- A Linux and macOS CI workflow (`.github/workflows/ci.yml`), **not yet run**; it needs the deploy key described in the README.
+
+### Fixed
+- A test that expected a silent first connection to be closed with nothing written now expects the `408` 0.6.0 made it.
+
+### Not changed, recorded
+- Adding cases to `TransportRefusal` can break an exhaustive `switch` in a consumer (SwiftMoE has one); an enum in a
+  non-resilient package cannot be made to grow safely, so this stays a consumer-side `default`, as the DocC says.
+
 ## [0.6.0] - 2026-10-30
 
 The regression SwiftMoE's migration found, the other wire differences its replay found, and the public API audit that was
@@ -389,7 +420,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.0...v0.4.1

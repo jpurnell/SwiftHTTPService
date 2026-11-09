@@ -2,7 +2,7 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 0.6.0 (2026-10-30), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
+**Status:** 0.7.0 (2026-11-09), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
 in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
 trusted proxies, the PROXY protocol, refusal hooks and TLS reload) exist and are tested. `ijs-dashboard-server` has served on it
@@ -84,7 +84,7 @@ not the value.
 | `headerReadTimeout` | 10 s | up to 1 h | `408`, close. A deadline on the whole head from its first byte, so dripping bytes does not extend it |
 | `bodyReadTimeout` | 30 s | up to 1 h | `408`, close |
 | `idleTimeout` | 60 s | up to 1 h | between requests: close, nothing written. On a new connection that has sent nothing: `408`, close |
-| `maximumConnections` | 256 | 1 to 100,000 | plaintext: `503` with `Retry-After`, close, without reading the request (at most 32 such refusals at once, each for at most 2 s; one past that is closed with nothing written). TLS: closed before the handshake, nothing written |
+| `maximumConnections` | 256 | 1 to 100,000 | plaintext: `503` with `Retry-After`, close, without reading the request (at most 32 such refusals at once, each for at most 2 s; one past that is closed with nothing written). TLS: the same after the handshake, in HTTP/1.1 or as the first stream of an h2 connection (at most 8 at once). With the PROXY protocol over TLS: closed, nothing written |
 | `busyRetryAfter` | 1 s | above 0, up to 1 h | the `Retry-After` of that `503`, rounded up to whole seconds |
 | `shutdownGrace` | 10 s | 0 to 10 min | whatever is still open when it ends is closed |
 | `maximumConcurrentStreams` | 100 | 1 to 1000 | HTTP/2 only. Advertised in SETTINGS and enforced; a stream past it is refused |

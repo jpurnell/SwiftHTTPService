@@ -33,6 +33,10 @@ final class ConnectionRegistry: Sendable {
     /// for at most ``BusyRefusalHandler/deadline``, and a server at its cap is a server with none to spare.
     static let defaultRefusalSlots = 32
 
+    /// The same, over TLS, where an answer costs a handshake: measured at about 7.5 times the CPU of a plaintext
+    /// refusal (6.9 ms against 0.92 ms a connection), so a quarter of the slots.
+    static let defaultTLSRefusalSlots = 8
+
     private struct State {
         var channels: [ObjectIdentifier: any Channel] = [:]
         var refusing = 0
@@ -48,8 +52,8 @@ final class ConnectionRegistry: Sendable {
     }
 
     /// Decides what to do with `channel`, and records it if it is to be served. With `mayRefuse` false (a
-    /// connection that would have to be refused over TLS, where an answer costs a handshake) a connection over
-    /// the cap is dropped, never refused.
+    /// connection the server cannot answer, such as one behind the PROXY protocol over TLS, whose header has to be
+    /// read before the handshake can start) a connection over the cap is dropped, never refused.
     func admit(_ channel: any Channel, mayRefuse: Bool = true) -> Admission {
         state.withLockedValue { state in
             guard state.channels.count < maximum else {

@@ -197,26 +197,30 @@ the kit to cancel idle work and to guard a loopback bind. All three items shippe
 - [x] A silent first connection gets `408`; `HTTP/2.0` in HTTP/1.1 framing gets `505`; `413` reads "Content Too Large".
   A body that stalls was already answered `408` (SwiftMoE's observation was of a peer that had gone).
 - [x] The public API audit; see the 1.0.0 list.
-- Not done, recorded: the new `TransportRefusal` cases break an exhaustive `switch` (SwiftMoE has one); an h2 mini-server to answer
-  `busy` after the TLS handshake.
+- Not done in 0.6.0, recorded: the new `TransportRefusal` cases break an exhaustive `switch` (SwiftMoE has one); an h2 mini-server to answer
+  `busy` after the TLS handshake. ~~The h2 mini-server~~ shipped in 0.7.0 at the owner's request, **against the 0.6.0 decision (A)**, with
+  a tighter bound (8 slots) for the handshake's cost. The exhaustive `switch` stays a consumer-side `default`: it cannot be fixed in the kit.
+
+### Released: 0.7.0 (2026-11-09), the shim removed, busy over TLS, the rig merged
+- [x] `connections` shim removed (FleetWatch still names it). [x] `busy` over TLS, HTTP/1.1 and h2. [x] The rig: timeouts, fuzz, floods, soak,
+  TLS reload under traffic, the PROXY protocol (emulated; HAProxy unrun), Linux CI workflow (unrun).
 
 ### Toward 1.0.0 (written 2026-10-29)
 The code is feature complete; what is left is evidence and a promise not to break the API.
-- [ ] Soak: SwiftPushHub and FleetWatch deployed on 0.4.1 for about a week, no transport fault (fault defined in `MigrationPlan_HandRolledServers.md` section 6).
-- [ ] Exercise the paths never run in anger: real HTTP/2 clients, TLS reload under traffic, the PROXY protocol behind a real balancer, the
-  timeout refusals over a real socket, memory and descriptor growth over days.
-- [ ] Linux CI (the README says "untested").
+- [x] ~~Soak: SwiftPushHub and FleetWatch deployed on 0.4.1 for about a week, no transport fault~~ Owner confirmed both working well, 2026-11-09.
+- [x] ~~Exercise the paths never run in anger~~ in 0.7.0 on loopback: HTTP/2, TLS reload under traffic, timeouts, a 60 s soak. **Still unrun:** the PROXY protocol behind real HAProxy, and memory and descriptor growth over days (the soak was 60 s).
+- [ ] Linux CI: the workflow is written (0.7.0) and has never run; needs the SwiftTLSKit deploy key. README still says "untested".
 - [x] ~~Public API audit (`Limits`, `RefusalHooks`, `ResponseStream`, `TLSReloadTrigger`, `ServiceConfiguration`), then freeze.~~ Done in
   0.6.0 (moved there from 0.5.0, which was spent on the three items SwiftMoE needed): `DesignProposal_0.6.0.md` section 3 has the
   table. One rename (`connections` to `connectionReuse`) with a deprecated shim that **must be removed in the next minor or at
   1.0.0, whichever comes first**; the freeze itself waits on the soak and the outside review below.
-- [ ] Fuzz the request-target, PROXY-header and form parsers; load-test the connection cap and the HTTP/2 flood defences.
+- [x] ~~Fuzz the request-target, PROXY-header and form parsers; load-test the connection cap and the HTTP/2 flood defences.~~ 0.7.0: no defect found.
 - [ ] An outside review of the trusted-proxy, `X-Forwarded-For`, redirect and cookie rules.
 - Deferred on purpose: VaultMCP and SwiftMCPServer migrations, h2c, WebSockets.
 
 ---
 
-**Last Updated:** 2026-10-30 (reconciled again for v0.6.0: the busy refusal, the wire differences and the API audit shipped, the audit item struck through, the shim's removal deadline recorded, README limits table; before that, v0.5.0 released: spike S1 proved idle cancellation with no transport change, `allowedHosts`, `cors`; the API-audit item moved to 0.6.0; README status; before that, 2026-10-29: v0.4.1 released; SwiftPushHub and FleetWatch migrations merged; the 0.1.0 and migration boxes updated; the road to 1.0.0 added; README status rewritten; earlier the same day, Gate A waived by the owner; SwiftPushHub found to be live, not unbuilt; `ijs-dashboard-server` deployed on v0.4.0; v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-11-09 (reconciled for v0.7.0: the shim removed, busy over TLS, the rig merged, the soak item ticked on the owner's word, Linux CI and HAProxy still unrun; before that, 2026-10-30, reconciled again for v0.6.0: the busy refusal, the wire differences and the API audit shipped, the audit item struck through, the shim's removal deadline recorded, README limits table; before that, v0.5.0 released: spike S1 proved idle cancellation with no transport change, `allowedHosts`, `cors`; the API-audit item moved to 0.6.0; README status; before that, 2026-10-29: v0.4.1 released; SwiftPushHub and FleetWatch migrations merged; the 0.1.0 and migration boxes updated; the road to 1.0.0 added; README status rewritten; earlier the same day, Gate A waived by the owner; SwiftPushHub found to be live, not unbuilt; `ijs-dashboard-server` deployed on v0.4.0; v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)

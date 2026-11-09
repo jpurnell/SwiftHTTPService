@@ -49,7 +49,7 @@ certificates: a plaintext refusal costs **0.92 ms CPU** per connection (7.8 ms w
 and gets a response costs **6.9 ms CPU** (13.4 ms wall): **about 7.5 times** the CPU. The handshake is the work the cap exists to
 refuse, an attacker pays for a TCP connect and a ClientHello and the server pays for key agreement and a signature, and (B) would
 spend it on exactly the connections it has no room for. (B) also needs new HTTP/2 code in the one place that must not be fragile.
-**Decision: (A). Over TLS, a connection past the cap is closed before the handshake; nothing is written and no hook is called.**
+**Decision: (A). Over TLS, a connection past the cap is closed before the handshake; nothing is written and no hook is called.** *(Reversed in 0.7.0 at the owner's request: option (B), with 8 refusal slots; see CHANGELOG.)*
 Pinned by `BusyRefusalTests.tlsIsClosedBeforeTheHandshake` (HTTP/1.1 and `h2` offers; `handshakeCompleted` false). Operators
 who want clients told over TLS terminate TLS in a proxy in front (it can answer 503 itself) or size the cap above the load. The
 "HTTP/2" half of the owner's question: the kit has no `h2c`, so every HTTP/2 connection is a TLS connection and falls under (A);

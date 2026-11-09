@@ -29,8 +29,9 @@ public enum TransportRefusal: Sendable, Hashable, CaseIterable, CustomStringConv
     /// The handler threw, or returned a status that is not a final one.
     case internalError
     /// A connection beyond `Limits.maximumConnections`, answered `503` with `Retry-After` and closed. It is refused
-    /// before its request is read, so a record of it has a peer and no request line. Over TLS the connection is
-    /// closed before the handshake instead, and no hook is called (see ``Limits/maximumConnections``).
+    /// before its request is read, so a record of it has a peer and no request line. Over TLS it is answered after the
+    /// handshake (over HTTP/2, when its first stream opens), and a record of it has the peer and no request line; behind
+    /// the PROXY protocol over TLS it is closed unanswered and no hook is called (see ``Limits/maximumConnections``).
     case busy
     /// A request line naming an HTTP major version other than 1 (`HTTP/2.0`, `HTTP/3.0`), answered `505`. HTTP/2 is
     /// spoken over TLS with ALPN, never as a request line in HTTP/1.1 framing.
