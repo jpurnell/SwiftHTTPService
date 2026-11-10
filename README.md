@@ -7,7 +7,7 @@ in `project/master_plan.md`. The core (request, response, problem, middleware, r
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
 trusted proxies, the PROXY protocol, refusal hooks and TLS reload) exist and are tested. `ijs-dashboard-server` has served on it
 since 2026-10-28 (Teletran 2). SwiftPushHub and FleetWatch have been migrated onto it (merged 2026-10-29; their deploys
-are the owner's, per each repository's runbook). **Linux is untested**; macOS 14 or newer is what is built and run.
+are the owner's, per each repository's runbook). macOS 14 or newer is what is run in production; Linux (Swift 6.2) builds and passes the full test suite in CI, run serially (see Continuous integration).
 Design: `project/plans/proposals/DesignProposal_SwiftHTTPService.md`.
 
 ## What it is
@@ -131,9 +131,11 @@ quality-gate
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` builds and tests on Linux (a `swift:6.2` container) and on macOS. **It has not been run**: it was
-written where Actions cannot run, and no container runtime was available to try the Linux build, so Linux remains
-untested until its first run. The one private dependency, SwiftTLSKit (an SSH URL in `Package.swift`), needs a read-only
+`.github/workflows/ci.yml` builds and tests on Linux (a `swift:6.2` container) and on macOS. Since 2026-11-10 both
+jobs run and pass. Linux runs the tests serially (`--no-parallel`): the suite's timing tests use 300 ms limits over real sockets, and on a
+two-core runner in parallel they measure the runner's load. The Linux job also runs the PROXY protocol check against the
+distribution's HAProxy (2.8). The first Linux run found two defects (a refused client that was still sending could lose its
+answer to a reset; `SIGHUP` was not delivered), both fixed in the 0.8.1 changes. The one private dependency, SwiftTLSKit (an SSH URL in `Package.swift`), needs a read-only
 **deploy key** on that repository and its private half as the Actions secret `SWIFTTLSKIT_DEPLOY_KEY` on this one; the
 steps are in the workflow's header comment. Pull requests from forks have no secrets and cannot resolve it.
 

@@ -1,7 +1,7 @@
 # Continuous integration: build and test on Linux (a Swift 6.2 container) and on macOS.
 #
-# NOT YET RUN. This file was written where Actions cannot run, and there was no container runtime to try the Linux
-# build locally; the first run on GitHub is the first evidence either platform gets from CI.
+# Run since 2026-11-10: both jobs pass. Linux tests run serially (see the step); the Linux job also runs the PROXY protocol
+# check against the distribution's HAProxy.
 #
 # The private dependency. Package.swift depends on the owner's private repository SwiftTLSKit by an SSH URL
 # (git@github.com:jpurnell/SwiftTLSKit.git). Every other dependency is public. To let the runners resolve it:
