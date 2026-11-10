@@ -54,11 +54,63 @@ public struct RateLimit: Sendable, Hashable {
     }
 }
 
+/// The generic cell rate algorithm's state for one budget: one theoretical arrival time per key, in a table that cannot
+/// grow past a bound. A value with no isolation of its own, so a single limiter and a group of budgets share the one
+/// implementation; the isolation belongs to whoever holds it.
+///
+/// ``evaluate(key:at:)`` only reads and ``commit(key:next:at:)`` only writes. Because a refused request never writes,
+/// a caller that checks several tables and commits only if every one says yes needs no refund.
+struct RateTable: Sendable {
+    /// What one table says about one request.
+    enum Verdict: Equatable, Sendable {
+        /// Let it through; `next` is the arrival time to store if the request is spent.
+        case allowed(next: Int)
+        /// Refuse it; the same key may try again after `wait` nanoseconds (at least one).
+        case limited(wait: Int)
+    }
+
+    private let emission: Int
+    private let tolerance: Int
+    private let maximumKeys: Int
+    /// The theoretical arrival time of each key's next request, in nanoseconds since the clock's start.
+    private var arrival: [String: Int] = [:]
+
+    /// `maximumKeys` must already have been validated (1 to 10,000,000), as ``RateBudget`` and ``RateLimiter`` do.
+    init(_ limit: RateLimit, maximumKeys: Int) {
+        self.emission = limit.emissionNanoseconds
+        self.tolerance = limit.burst * limit.emissionNanoseconds    // at most 10,000 * 86,400e9: well inside Int
+        self.maximumKeys = maximumKeys
+    }
+
+    /// How many keys are tracked.
+    var count: Int { arrival.count }
+
+    func evaluate(key: String, at time: Int) -> Verdict {
+        let next = max(arrival[key] ?? time, time) + emission
+        let earliest = next - tolerance
+        guard time >= earliest else { return .limited(wait: earliest - time) }
+        return .allowed(next: next)
+    }
+
+    mutating func commit(key: String, next: Int, at time: Int) {
+        if arrival[key] == nil, arrival.count >= maximumKeys { makeRoom(at: time) }
+        arrival[key] = next
+    }
+
+    private mutating func makeRoom(at time: Int) {
+        arrival = arrival.filter { $0.value > time }
+        guard arrival.count >= maximumKeys, let oldest = arrival.min(by: { ($0.value, $0.key) < ($1.value, $1.key) }) else { return }
+        arrival.removeValue(forKey: oldest.key)
+    }
+}
+
 /// Counts requests per client, with a table that cannot grow past a bound.
 ///
 /// When the table is full, clients that have nothing owed (their bucket is full again, so they would be treated
 /// exactly as a client never seen) are dropped first; if there are none, the client that was least recently
 /// active goes. A flood of new keys therefore costs a client its own history and cannot grow memory.
+///
+/// For a request that must be checked against more than one budget, all or nothing, use ``RateLimiterGroup``.
 public actor RateLimiter {
     /// The answer for one request.
     public enum Decision: Equatable, Sendable {
@@ -68,12 +120,8 @@ public actor RateLimiter {
         case limited(retryAfter: Duration)
     }
 
-    private let emission: Int
-    private let tolerance: Int
-    private let maximumKeys: Int
     private let now: @Sendable () -> Duration
-    /// The theoretical arrival time of each key's next request, in nanoseconds since the clock's start.
-    private var arrival: [String: Int] = [:]
+    private var table: RateTable
 
     /// Creates a limiter.
     ///
@@ -84,32 +132,24 @@ public actor RateLimiter {
     /// - Throws: ``RateLimitError/maximumKeys`` if the bound is out of range.
     public init(_ limit: RateLimit, maximumKeys: Int = 10_000, now: (@Sendable () -> Duration)? = nil) throws(RateLimitError) {
         guard (1...10_000_000).contains(maximumKeys) else { throw .maximumKeys }
-        self.emission = limit.emissionNanoseconds
-        self.tolerance = limit.burst * limit.emissionNanoseconds    // at most 10,000 * 86,400e9: well inside Int
-        self.maximumKeys = maximumKeys
+        self.table = RateTable(limit, maximumKeys: maximumKeys)
         let start = ContinuousClock.now
         self.now = now ?? { start.duration(to: ContinuousClock.now) }
     }
 
     /// How many clients are tracked.
-    public var trackedKeys: Int { arrival.count }
+    public var trackedKeys: Int { table.count }
 
     /// Asks whether `key` may make a request now, and counts it if so. A refused request costs nothing.
     public func check(key: String) -> Decision {
         let time = nanoseconds(now())
-        let stored = arrival[key]
-        let next = max(stored ?? time, time) + emission
-        let earliest = next - tolerance
-        guard time >= earliest else { return .limited(retryAfter: .nanoseconds(earliest - time)) }
-        if stored == nil, arrival.count >= maximumKeys { makeRoom(at: time) }
-        arrival[key] = next
-        return .allowed
-    }
-
-    private func makeRoom(at time: Int) {
-        arrival = arrival.filter { $0.value > time }
-        guard arrival.count >= maximumKeys, let oldest = arrival.min(by: { ($0.value, $0.key) < ($1.value, $1.key) }) else { return }
-        arrival.removeValue(forKey: oldest.key)
+        switch table.evaluate(key: key, at: time) {
+        case .limited(let wait):
+            return .limited(retryAfter: .nanoseconds(wait))
+        case .allowed(let next):
+            table.commit(key: key, next: next, at: time)
+            return .allowed
+        }
     }
 }
 
@@ -137,7 +177,7 @@ public func rateLimit(
 }
 
 /// A non-negative duration as whole nanoseconds, rounded down.
-private func nanoseconds(_ duration: Duration) -> Int {
+func nanoseconds(_ duration: Duration) -> Int {
     guard duration > .zero else { return 0 }
     let parts = duration.components
     return Int(parts.seconds) * 1_000_000_000 + Int(parts.attoseconds / 1_000_000_000)
