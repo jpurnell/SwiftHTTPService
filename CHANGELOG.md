@@ -6,6 +6,33 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-09
+
+One rate-limiter implementation for the portfolio: a request against several budgets, all or nothing.
+
+### Added
+- **`RateLimiterGroup`: several rate budgets checked all or nothing.** A request is claimed against any number of
+  budgets (`RateClaim(budget:key:)`, each budget a `RateBudget` with its own `RateLimit` and table bound). It is admitted
+  and every budget is spent, or it is refused and none is. A refusal is `RateAdmission.limited(retryAfter:refusedBy:)`:
+  the **longest** wait among the budgets that refused, and which budgets they were. No refund exists or is needed: a
+  refused request never writes a key's generic-cell-rate state, so the group evaluates every claim and then writes.
+  All the budgets live in one actor and the evaluate-and-write step has no suspension in it, so it is one isolated
+  operation (composing several `RateLimiter` actors cannot give that). For SwiftDiagnosticsHub's per-app-key plus
+  per-address-bucket case, and any server with the same shape. `project/plans/proposals/AtomicRateLimiting.md`.
+- An asynchronous clock seam: `RateLimiterGroup(_:clock:)` takes `@Sendable () async -> Duration`; `RateLimiterGroup(_:now:)`
+  takes the synchronous closure `RateLimiter` already takes. The clock is read once per `admit`, before any budget is touched.
+- `RateClaimError` (`noBudgets`, `unknownBudget`): a claim on a budget that does not exist throws and spends nothing; it is
+  never treated as unlimited. Two claims for the same budget and key in one call count once.
+
+### Changed
+- Internal only: the generic cell rate algorithm and its bounded table moved out of the `RateLimiter` actor into an internal
+  value, `RateTable`, which the actor and the group share, so there is one implementation. `RateLimiter`'s API and behaviour
+  are unchanged and its tests were not touched.
+
+### Not changed, recorded
+- Garbage keys that must share one budget (an unrecognised app key) are the caller's: map them to one fixed key before
+  claiming. They then hold one table slot and one budget, which a test pins. A kit-side fallback would need the kit to know which keys are real.
+
 ## [0.7.0] - 2026-11-09
 
 The shim removed, a connection past the cap told over TLS too, and the evidence for 1.0.0 merged: the rig that proves the
@@ -420,7 +447,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.4.1...v0.5.0

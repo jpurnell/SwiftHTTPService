@@ -2,7 +2,7 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 0.7.0 (2026-11-09), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
+**Status:** 0.8.0 (2026-11-09), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
 in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
 trusted proxies, the PROXY protocol, refusal hooks and TLS reload) exist and are tested. `ijs-dashboard-server` has served on it
@@ -44,6 +44,7 @@ Design: `project/plans/proposals/DesignProposal_SwiftHTTPService.md`.
 - `RateLimiter`, `rateLimit(_:key:)`: a per-client limit (GCRA, integer nanoseconds, one number per client) with
   a bounded table, `429` as a problem with `Retry-After`. Behind a proxy, key on what the proxy reports.
   Order, outermost first: access log, request id, rate limiter, the rest.
+- `RateLimiterGroup`, `RateBudget`, `RateClaim`: one request against **several budgets, all or nothing** (see below).
 - `allowedHosts(_:)`: `421 Misdirected Request` unless `Host` (`:authority` over HTTP/2), port included, is on a list of
   exact, ASCII-case-insensitive `host` or `host:port` entries. It is the defence against DNS rebinding **on a loopback bind**;
   on a public bind the TLS name plus a `Host` check is the caller's decision. An empty list or a malformed entry throws.
@@ -139,3 +140,24 @@ steps are in the workflow's header comment. Pull requests from forks have no sec
 ## Licence
 
 Proprietary. See `LICENSE`.
+
+## Several budgets at once
+
+A request that must pass a per-client budget and a per-address budget should spend neither when either refuses.
+`RateLimiterGroup` holds the budgets in one actor and checks every claim before it writes any, so a refusal costs nothing
+and `Retry-After` is the longest wait among the budgets that refused:
+
+```swift
+let group = try RateLimiterGroup([
+    RateBudget(RateLimit(requests: 2, per: .seconds(1), burst: 120)),   // budget 0: per app key
+    RateBudget(RateLimit(requests: 30, per: .seconds(60))),             // budget 1: per address bucket
+])
+switch try await group.admit([RateClaim(budget: 0, key: appKey), RateClaim(budget: 1, key: bucket)]) {
+case .allowed: break                                                    // both were spent
+case .limited(let wait, let refusedBy): break                           // neither was; `refusedBy` says which refused
+}
+```
+
+Each budget's table is bounded by its own `maximumKeys`. Keys that are not real (an unrecognised app key) should be mapped
+by the caller to one fixed key before claiming, so they share one slot and one budget and cannot spend a real key's.
+The clock is injectable: `now:` (synchronous) or `clock:` (asynchronous).

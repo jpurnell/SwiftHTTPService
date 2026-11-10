@@ -56,6 +56,7 @@ Sources/SwiftHTTPServiceNIO/         the transport: HTTPServer, HeadGuard, Conne
 - [x] Package scaffold, guidelines vendored, design proposal written.
 - [x] `Request`: strict origin-form parsing (22 refused targets), segments split before decoding, query.
 - [x] `Context`, `Response`, `Problem`, `Handler`, `Middleware`, `wrap`. 33 tests; hand mutations caught.
+- [x] `RateLimiterGroup` (0.8.0): several rate budgets checked all or nothing in one actor; 18 tests, atomicity mutation caught.
 
 ### Transport (~~branch `transport`~~ merged into `main`, `20ab1b8`, 2026-10-27)
 - [x] `ServiceConfiguration`, `Limits`, `TLSFiles`: validated, nothing clamped, errors never carry a value.
@@ -205,6 +206,11 @@ the kit to cancel idle work and to guard a loopback bind. All three items shippe
 - [x] `connections` shim removed (FleetWatch still names it). [x] `busy` over TLS, HTTP/1.1 and h2. [x] The rig: timeouts, fuzz, floods, soak,
   TLS reload under traffic, the PROXY protocol (emulated; HAProxy unrun), Linux CI workflow (unrun).
 
+### Released: 0.8.0 (2026-11-09), atomic rate limiting
+- [x] `RateLimiterGroup`: several budgets checked all or nothing, Retry-After the longest refusal, an async clock seam, bounded tables.
+  `AtomicRateLimiting.md`. Additive; `RateLimiter` unchanged (its algorithm now lives in an internal `RateTable` both share).
+  Lets SwiftDiagnosticsHub retire its own limiter; moving it, and the other portfolio limiters, is each consumer's change.
+
 ### Toward 1.0.0 (written 2026-10-29)
 The code is feature complete; what is left is evidence and a promise not to break the API.
 - [x] ~~Soak: SwiftPushHub and FleetWatch deployed on 0.4.1 for about a week, no transport fault~~ Owner confirmed both working well, 2026-11-09.
@@ -220,7 +226,7 @@ The code is feature complete; what is left is evidence and a promise not to brea
 
 ---
 
-**Last Updated:** 2026-11-09 (reconciled for v0.7.0: the shim removed, busy over TLS, the rig merged, the soak item ticked on the owner's word, Linux CI and HAProxy still unrun; before that, 2026-10-30, reconciled again for v0.6.0: the busy refusal, the wire differences and the API audit shipped, the audit item struck through, the shim's removal deadline recorded, README limits table; before that, v0.5.0 released: spike S1 proved idle cancellation with no transport change, `allowedHosts`, `cors`; the API-audit item moved to 0.6.0; README status; before that, 2026-10-29: v0.4.1 released; SwiftPushHub and FleetWatch migrations merged; the 0.1.0 and migration boxes updated; the road to 1.0.0 added; README status rewritten; earlier the same day, Gate A waived by the owner; SwiftPushHub found to be live, not unbuilt; `ijs-dashboard-server` deployed on v0.4.0; v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
+**Last Updated:** 2026-11-09 (reconciled for v0.8.0: atomic rate limiting, `RateLimiterGroup`, proposal and tests, README status, changelog links; Hub migration and other limiters are the consumers' work; before that, reconciled for v0.7.0: the shim removed, busy over TLS, the rig merged, the soak item ticked on the owner's word, Linux CI and HAProxy still unrun; before that, 2026-10-30, reconciled again for v0.6.0: the busy refusal, the wire differences and the API audit shipped, the audit item struck through, the shim's removal deadline recorded, README limits table; before that, v0.5.0 released: spike S1 proved idle cancellation with no transport change, `allowedHosts`, `cors`; the API-audit item moved to 0.6.0; README status; before that, 2026-10-29: v0.4.1 released; SwiftPushHub and FleetWatch migrations merged; the 0.1.0 and migration boxes updated; the road to 1.0.0 added; README status rewritten; earlier the same day, Gate A waived by the owner; SwiftPushHub found to be live, not unbuilt; `ijs-dashboard-server` deployed on v0.4.0; v0.4.0 released: streaming, trusted proxies and the PROXY protocol, refusal hooks, per-route limits, forms, typed responses, redirects and cookies, close-after-response, `Request.httpVersion`; the migration gaps are closed; migration decisions D1 to D4 made by the owner and recorded; 0.4.0 scope widened; a consumer's findings recorded under Future; v0.3.0: the middleware, reload triggers and the stopped-loop fix shipped, the roadmap items struck through, the kit feature complete; before that, 2026-10-28: v0.2.0 released with HTTP/2; HTTP/2 built and recorded: design, changelog, README, roadmap items struck through; v0.1.0 tagged; SwiftTLSKit path dependency became a URL pin at 0.2.1; roadmap ordered feature-complete before migration. Earlier that day, reconciled: the transport merged, Phase 1 and 2 boxes ticked, the first real
 traffic (the deployed `ijs-dashboard-server`) and the migration plan's open decisions recorded, the missing release
 added as Phase 3; README status and CHANGELOG link. Earlier, 2026-10-27: router, conditional requests and health
 route added to the core)
