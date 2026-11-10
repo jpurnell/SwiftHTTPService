@@ -124,7 +124,7 @@ struct StreamingHTTP2Tests {
         }) { _, address, material, group in
             let client = try await connect(address, material, group)
             let stream = try await client.open("GET", "/boom")
-            #expect(try await stream.wait { $0.resetCode == 2 || $0.ended })
+            #expect(try await stream.wait { $0.resetCode != nil })   // the reset is a frame of its own, behind any answer
             #expect(stream.response.resetCode == 2)               // INTERNAL_ERROR, RFC 9113 section 7
             #expect(stream.response.ended == false)
             #expect(stream.response.text == "before")
@@ -186,7 +186,7 @@ struct StreamingHTTP2Tests {
         }) { _, address, material, group in
             let client = try await connect(address, material, group)
             let over = try await client.open("GET", "/over")
-            #expect(try await over.wait { $0.resetCode == 8 || $0.ended })
+            #expect(try await over.wait { $0.resetCode != nil })
             #expect(over.response.resetCode == 8)                  // CANCEL: the server ended it deliberately
             #expect(over.response.ended == false)
             #expect(over.response.body.count <= 10)

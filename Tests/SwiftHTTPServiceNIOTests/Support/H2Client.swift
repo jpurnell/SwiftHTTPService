@@ -146,10 +146,11 @@ struct H2Client: Sendable {
         return collector.state.withLockedValue { $0 }
     }
 
-    /// Sends exactly this header block, in this order, then the body and the trailers if given.
+    /// Sends exactly this header block, in this order, then the body and the trailers if given. With `awaitReset`, an ended
+    /// answer is not the end: the stream's reset is waited for too.
     func send(
         block fields: [(String, String)], body: Data? = nil, trailers: [(String, String)]? = nil,
-        leaveOpen: Bool = false, timeout: Duration = .seconds(5)
+        leaveOpen: Bool = false, awaitReset: Bool = false, timeout: Duration = .seconds(5)
     ) async throws -> H2Response {
         let collector = StreamCollector()
         let promise = channel.eventLoop.makePromise(of: Channel.self)
@@ -186,7 +187,8 @@ struct H2Client: Sendable {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             let current = collector.state.withLockedValue { $0 }
-            if current.ended || current.resetCode != nil || current.closed { return current }
+            // The reset that follows an answer (RFC 9113 section 8.1) is a frame of its own, a moment behind the answer's end.
+            if (current.ended && !awaitReset) || current.resetCode != nil || current.closed { return current }
             try await Task.sleep(for: .milliseconds(5))
         }
         return collector.state.withLockedValue { $0 }

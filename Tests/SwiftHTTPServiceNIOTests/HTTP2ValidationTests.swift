@@ -153,7 +153,7 @@ struct HTTP2ValidationTests {
         var limits = Limits()
         limits.maximumBodyBytes = 10
         let response = try await exchange(limits: limits, block: [(":method", "POST"), (":scheme", "https"), (":path", "/x"), ("content-length", "11")],
-                                          body: nil, keepOpen: true)
+                                          body: nil, keepOpen: true, awaitReset: true)
         #expect(response.status == 413)
         #expect(response.body == Refusal.bodyTooLarge.body, "body was \(response.text.debugDescription), \(response.headers)")
         #expect(response.resetCode == 0)
@@ -184,7 +184,8 @@ struct HTTP2ValidationTests {
     }
 
     private func exchange(
-        limits: Limits, block: [(String, String)], body: Data?, trailers: [(String, String)]? = nil, keepOpen: Bool = false
+        limits: Limits, block: [(String, String)], body: Data?, trailers: [(String, String)]? = nil, keepOpen: Bool = false,
+        awaitReset: Bool = false
     ) async throws -> H2Response {
         let material = try TestTLS()
         defer { material.cleanUp() }
@@ -192,7 +193,7 @@ struct HTTP2ValidationTests {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let client = try await H2Client.connect(
             to: running.address, group: group, tls: try material.clientContext(applicationProtocols: ["h2"]), lenient: true)
-        let response = try await client.send(block: block, body: body, trailers: trailers, leaveOpen: keepOpen)
+        let response = try await client.send(block: block, body: body, trailers: trailers, leaveOpen: keepOpen, awaitReset: awaitReset)
         await client.close()
         try await group.shutdownGracefully()
         await running.server.shutdown()

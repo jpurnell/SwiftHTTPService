@@ -96,7 +96,7 @@ struct HTTP2LimitsTests {
         try await withServer(limits: limits) { address, material, group in
             let client = try await connect(address, material, group)
             let response = try await client.send(
-                block: [(":method", "POST"), (":scheme", "https"), (":path", "/x"), ("content-length", "5")], leaveOpen: true)
+                block: [(":method", "POST"), (":scheme", "https"), (":path", "/x"), ("content-length", "5")], leaveOpen: true, awaitReset: true)
             #expect(response.status == 408)
             #expect(response.body == Refusal.requestTimeout.body)
             #expect(response.resetCode == 0)
