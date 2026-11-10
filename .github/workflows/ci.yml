@@ -41,7 +41,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Tools the container may lack (git is in the image; ssh may not be)
-        run: apt-get update && apt-get install -y --no-install-recommends openssh-client ca-certificates
+        # Retried, and each attempt bounded: the Ubuntu mirrors have answered with an inconsistent index and, once, not at all.
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 120 sh -c 'apt-get update && apt-get install -y --no-install-recommends openssh-client ca-certificates'; then exit 0; fi
+            echo "apt attempt $attempt failed"; sleep 10
+          done
+          exit 1
       - name: Access to the private SwiftTLSKit
         env:
           DEPLOY_KEY: ${{ secrets.SWIFTTLSKIT_DEPLOY_KEY }}
