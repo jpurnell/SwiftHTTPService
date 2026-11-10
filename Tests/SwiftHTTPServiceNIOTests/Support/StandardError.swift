@@ -8,11 +8,11 @@ func captureStandardError(_ body: () async throws -> Void) async throws -> Strin
     defer { do { try FileManager.default.removeItem(at: file) } catch { Issue.record("could not remove \(file.path)") } }
     let handle = try FileHandle(forWritingTo: file)
     let saved = dup(STDERR_FILENO)
-    fflush(stderr)
+    fflush(nil)
     dup2(handle.fileDescriptor, STDERR_FILENO)
     defer { dup2(saved, STDERR_FILENO); close(saved) }
     try await body()
-    fflush(stderr)
+    fflush(nil)
     try handle.close()
     return String(decoding: try Data(contentsOf: file), as: UTF8.self)
 }
