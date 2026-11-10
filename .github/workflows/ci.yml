@@ -73,7 +73,14 @@ jobs:
       - run: swift --version
       - run: swift package resolve
       - run: swift build --build-tests
-      - run: swift test
+      # Serial: the timing tests use 300 ms limits over real sockets, and run in parallel on a two-core runner they measure
+      # the runner's contention, not the kit. The fd limit and exit status are printed because a crash prints nothing else.
+      - name: swift test
+        run: |
+          ulimit -n
+          swift test --no-parallel; status=$?
+          echo "swift test exited with $status"
+          exit $status
 
   macos:
     name: macOS
