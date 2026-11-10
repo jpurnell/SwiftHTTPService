@@ -229,7 +229,9 @@ struct BusyRefusalTests {
             let held = try await RawClient.connect(to: running.address, group: group)
             try await held.send(Self.get)
             #expect(try await held.response()?.status == 200)
-            let refused = try await RawClient.connect(to: running.address, group: group)
+            // The refusal is written, and the output side closed, as soon as the connection opens: a client that closed
+            // on that FIN could lose the race with its own request. This one stays open until the server's deadline closes it.
+            let refused = try await RawClient.connect(to: running.address, group: group, keepOpenAfterFIN: true)
             try await refused.send("POST /x HTTP/1.1\r\nHost: h\r\nContent-Length: 5\r\n\r\nhello")
             #expect(try await refused.response()?.status == 503)
             #expect(try await refused.waitUntilClosed())

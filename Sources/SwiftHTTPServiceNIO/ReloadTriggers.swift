@@ -141,7 +141,14 @@ final class HangupBroadcaster: @unchecked Sendable {
             let heard = lock.withLock { Array(listeners.values) }
             for continuation in heard { continuation.yield() }
         }
+        // A source listens only once libdispatch has registered it, which happens asynchronously after `resume()`;
+        // a SIGHUP that arrives before then is ignored (the disposition above) and lost. The stream is handed out
+        // only after registration, so a signal sent once a stream exists is always heard.
+        let registered = DispatchSemaphore(value: 0)
+        made.setRegistrationHandler { registered.signal() }
         made.resume()
+        // Bounded: a source that never registers must not hold the lock (and so every stream) forever.
+        _ = registered.wait(timeout: .now() + .seconds(2))
         source = made
     }
 
