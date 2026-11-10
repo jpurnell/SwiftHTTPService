@@ -148,7 +148,7 @@ struct HTTP2LimitsTests {
             let answered431 = response.status == 431
             let resetCodes = [1, 7, 11]   // PROTOCOL_ERROR, REFUSED_STREAM, ENHANCE_YOUR_CALM (RFC 9113 section 7)
             let reset = response.resetCode.map { resetCodes.contains($0) } ?? false
-            #expect(answered431 || reset || response.closed, "saw status \(String(describing: response.status)), reset \(String(describing: response.resetCode))")
+            #expect(answered431 || reset || response.closed, "saw status \(String(describing: response.status)), reset \(String(describing: response.resetCode)), connection active: \(refused.channel.isActive)")
             if answered431 { #expect(response.body == Refusal.headersTooLarge.body) }
             await refused.close()
         }
