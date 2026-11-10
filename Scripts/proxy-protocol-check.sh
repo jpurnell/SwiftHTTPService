@@ -16,8 +16,8 @@
 # --emulate, a Python stand-in (Scripts/proxy-protocol/emulated_balancer.py) that exercises everything but HAProxy itself.
 # With none of them the script says so and exits 3. Exit 0: every check passed. Exit 1: a check failed.
 #
-# STATUS: UNRUN against HAProxy. Where this was written there was no haproxy, no nginx and no docker; only the --emulate
-# path has been run (see RigFindings.md for its result).
+# STATUS: run against HAProxy 3.4.7 (Homebrew, macOS arm64) on 2026-11-10: every check passed. CI runs it on Linux
+# against the distribution's haproxy package (the "PROXY protocol against HAProxy" step of the Linux job).
 set -eu
 cd "$(git rev-parse --show-toplevel)"
 

@@ -81,6 +81,12 @@ jobs:
           swift test --no-parallel; status=$?
           echo "swift test exited with $status"
           exit $status
+      # The PROXY protocol against an independent implementation: our own tests share our reading of the specification.
+      - name: PROXY protocol against HAProxy
+        run: |
+          apt-get install -y --no-install-recommends haproxy
+          haproxy -v | head -1
+          ./scripts/proxy-protocol-check.sh
 
   macos:
     name: macOS

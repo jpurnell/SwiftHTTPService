@@ -204,7 +204,7 @@ the kit to cancel idle work and to guard a loopback bind. All three items shippe
 
 ### Released: 0.7.0 (2026-11-09), the shim removed, busy over TLS, the rig merged
 - [x] `connections` shim removed (FleetWatch still names it). [x] `busy` over TLS, HTTP/1.1 and h2. [x] The rig: timeouts, fuzz, floods, soak,
-  TLS reload under traffic, the PROXY protocol (emulated; HAProxy unrun), Linux CI workflow (unrun).
+  TLS reload under traffic, the PROXY protocol (emulated; HAProxy run afterwards, 2026-11-10: all checks passed), Linux CI workflow (run 2026-11-10; green on Linux and macOS from ee380fd).
 
 ### Released: 0.8.0 (2026-11-09), atomic rate limiting
 - [x] `RateLimiterGroup`: several budgets checked all or nothing, Retry-After the longest refusal, an async clock seam, bounded tables.
@@ -214,7 +214,7 @@ the kit to cancel idle work and to guard a loopback bind. All three items shippe
 ### Toward 1.0.0 (written 2026-10-29)
 The code is feature complete; what is left is evidence and a promise not to break the API.
 - [x] ~~Soak: SwiftPushHub and FleetWatch deployed on 0.4.1 for about a week, no transport fault~~ Owner confirmed both working well, 2026-11-09.
-- [x] ~~Exercise the paths never run in anger~~ in 0.7.0 on loopback: HTTP/2, TLS reload under traffic, timeouts, a 60 s soak. **Still unrun:** the PROXY protocol behind real HAProxy, and memory and descriptor growth over days (the soak was 60 s).
+- [x] ~~Exercise the paths never run in anger~~ in 0.7.0 on loopback: HTTP/2, TLS reload under traffic, timeouts, a 60 s soak. ~~**Still unrun:** the PROXY protocol behind real HAProxy~~ (run 2026-11-10 against HAProxy 3.4.7: v1 and v2, IPv4 and IPv6, nothing leaking between connections, a header-less peer refused; now a CI step), and **still unrun:** memory and descriptor growth over days (the soak was 60 s).
 - [ ] Linux CI: the workflow is written (0.7.0) and has never run; needs the SwiftTLSKit deploy key. README still says "untested".
 - [x] ~~Public API audit (`Limits`, `RefusalHooks`, `ResponseStream`, `TLSReloadTrigger`, `ServiceConfiguration`), then freeze.~~ Done in
   0.6.0 (moved there from 0.5.0, which was spent on the three items SwiftMoE needed): `DesignProposal_0.6.0.md` section 3 has the
