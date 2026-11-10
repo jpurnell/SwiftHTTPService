@@ -86,7 +86,7 @@ jobs:
         run: |
           apt-get install -y --no-install-recommends haproxy
           haproxy -v | head -1
-          ./scripts/proxy-protocol-check.sh
+          ./Scripts/proxy-protocol-check.sh
 
   macos:
     name: macOS

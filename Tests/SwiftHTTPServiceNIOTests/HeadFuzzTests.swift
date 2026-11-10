@@ -23,6 +23,10 @@ struct HeadFuzzTests {
         var status: Int?
         var closed: Bool
         var hung: Bool
+        /// What the client got of the request out before the connection ended, of how many bytes, and what it received.
+        var sent = 0
+        var of = 0
+        var received = 0
     }
 
     private static func limits() -> Limits {
@@ -48,7 +52,7 @@ struct HeadFuzzTests {
             start = cut
         }
         let deadline = ContinuousClock.now + hangBound
-        var outcome = Outcome(status: nil, closed: false, hung: false)
+        var outcome = Outcome(status: nil, closed: false, hung: false, of: bytes.count)
         while ContinuousClock.now < deadline {
             var data = client.received
             if let response = PipelineHarness.parse(&data) { outcome.status = response.status; break }
@@ -56,6 +60,8 @@ struct HeadFuzzTests {
             try await Task.sleep(for: .milliseconds(5))
         }
         if outcome.status == nil, !outcome.closed { outcome.hung = !client.isClosed }
+        outcome.sent = start
+        outcome.received = client.received.count
         await client.close()
         return outcome
     }

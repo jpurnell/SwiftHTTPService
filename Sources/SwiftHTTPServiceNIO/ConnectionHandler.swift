@@ -461,6 +461,9 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     func errorCaught(context: ChannelHandlerContext, error: any Error) {
         switch state {
         case .closing:
+            // A connection lingering after its answer ignores what the parser makes of the peer's leftover bytes: a full
+            // close here is the reset the linger exists to avoid. Any other fault ends it.
+            if lingerTimer != nil, error is HTTPParserError { return }
             context.close(promise: nil)
         case .idle, .receiving:
             guard let parserError = error as? HTTPParserError else {
