@@ -64,12 +64,14 @@ struct RawClient: Sendable {
     /// Connects to `address`. With `tls`, speaks TLS using that SwiftTLSKit client context, naming the server `localhost`.
     static func connect(
         to address: BoundAddress, group: MultiThreadedEventLoopGroup, tls: ClientTLSContext? = nil, prelude: [UInt8]? = nil,
-        keepOpenAfterFIN: Bool = false
+        keepOpenAfterFIN: Bool = false, autoRead: Bool = true
     ) async throws -> RawClient {
         let collector = Collector()
         let channel = try await ClientBootstrap(group: group)
             // By default a client closes when the server's FIN arrives; one that does not is a peer that never leaves.
             .channelOption(ChannelOptions.allowRemoteHalfClosure, value: keepOpenAfterFIN)
+            // Off, nothing is read until `channel.read()` is called: a peer that is slow to look at what it was sent.
+            .channelOption(ChannelOptions.autoRead, value: autoRead)
             .channelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     if let tls { try tls.addHandlers(to: channel.pipeline.syncOperations, serverHostname: "localhost") }

@@ -6,6 +6,22 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+First Linux CI run (Swift 6.2 container); it found two defects the macOS runs had not.
+
+### Fixed
+- **A refusal could be lost to a reset.** A response followed by `Connection: close` ended with a full close, and
+  closing a socket that still holds unread request bytes (the body behind a refused head) sends a reset, which can
+  destroy a response the client has not yet read. A client still sending saw a closed connection and no `400`/`413`/`431`.
+  The output side is now shut down first, what the peer still sends is read and dropped, and the connection is closed
+  when the peer ends it or after one second (`ConnectionHandler.lingerLimit`); a transport that cannot half-close is
+  closed at once. Test: `RefusalIsReadTests` (a client that reads only after its body is sent; 19 of 20 rounds lost
+  the response before the change).
+- **`TLSReloadTrigger.hangup()` heard nothing on Linux.** A dispatch signal source there needs the signal blocked in
+  every thread, and a process-directed `SIGHUP` landing on a thread that does not block it was lost. `SIGHUP` is now
+  handled by a handler that writes to a self-pipe, read by a dispatch read source. While a hangup stream lives the
+  signal's disposition is that handler (it was `SIG_IGN`); what was there before is still put back when the last
+  stream ends.
+
 ## [0.8.0] - 2026-11-09
 
 One rate-limiter implementation for the portfolio: a request against several budgets, all or nothing.

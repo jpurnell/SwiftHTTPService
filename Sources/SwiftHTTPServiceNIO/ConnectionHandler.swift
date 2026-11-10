@@ -59,6 +59,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private var streamSession: StreamSession?
     private var streamTask: Task<Void, any Error>?
     private var streamTimer: Scheduled<Void>?
+    private var lingerTimer: Scheduled<Void>?
 
     private let identity: ConnectionIdentity
 
@@ -293,7 +294,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: finished)
         if close {
             let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
-            finished.futureResult.whenComplete { _ in loopContext.value.close(promise: nil) }
+            finished.futureResult.whenComplete { [self] _ in lingeringClose(context: loopContext.value) }
         } else {
             context.triggerUserOutboundEvent(GuardSignal.responseFinished, promise: nil)
         }
@@ -379,7 +380,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: finished)
         if close {
             let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
-            finished.futureResult.whenComplete { _ in loopContext.value.close(promise: nil) }
+            finished.futureResult.whenComplete { [self] _ in lingeringClose(context: loopContext.value) }
         } else {
             context.triggerUserOutboundEvent(GuardSignal.responseFinished, promise: nil)
         }
@@ -395,6 +396,21 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
             handler.bodyTimer = nil
             if case .receiving = handler.state { handler.refuse(.requestTimeout, context: loopContext.value) }
         }
+    }
+
+    /// How long a connection whose last response has been written waits for the peer to finish before it is closed.
+    static let lingerLimit: TimeAmount = .seconds(1)
+
+    /// Ends a connection after its last response without destroying that response. Closing a socket that still has
+    /// unread request bytes in its receive buffer (the body behind a refused head, say) sends a reset, and a reset can
+    /// discard a response the peer has not yet read. So the output side is shut down first, which sends the response
+    /// and a FIN; what the peer still sends is read and dropped (the state is `.closing`); and the connection is closed
+    /// when the peer ends it or when ``lingerLimit`` passes. A transport that cannot half-close is closed at once.
+    private func lingeringClose(context: ChannelHandlerContext) {
+        let loopContext = NIOLoopBound(context, eventLoop: context.eventLoop)
+        context.close(mode: .output).whenFailure { _ in loopContext.value.close(promise: nil) }
+        lingerTimer?.cancel()
+        lingerTimer = context.eventLoop.scheduleTask(in: Self.lingerLimit) { loopContext.value.close(promise: nil) }
     }
 
     private func cancelBodyTimer() {
@@ -467,6 +483,8 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         liveness.close()
         streamTimer?.cancel()
         streamTimer = nil
+        lingerTimer?.cancel()
+        lingerTimer = nil
         streamTask?.cancel()
         streamTask = nil
         streamSession = nil
