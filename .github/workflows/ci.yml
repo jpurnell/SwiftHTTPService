@@ -8,6 +8,7 @@
 #   1. Make an SSH key pair used for nothing else:   ssh-keygen -t ed25519 -N '' -C 'swifthttpservice-ci' -f ci_key
 #   2. Add ci_key.pub as a read-only DEPLOY KEY on github.com/jpurnell/SwiftTLSKit (Settings, Deploy keys; leave "Allow
 #      write access" off).
+#   (The key is offered through ~/.ssh/config; see the step that writes it.)
 #   3. Add the private half (the whole contents of ci_key) as an Actions secret of THIS repository named
 #      SWIFTTLSKIT_DEPLOY_KEY, then delete the local ci_key.
 # A deploy key reaches one repository, which is the point: a token or a personal key would reach all of them. If
@@ -49,7 +50,11 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/ci_key && chmod 600 ~/.ssh/ci_key
           ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts
-          git config --global core.sshCommand "ssh -i $HOME/.ssh/ci_key -o IdentitiesOnly=yes"
+          # An ssh config entry, not git's core.sshCommand: SwiftPM sets GIT_SSH_COMMAND itself (to stop prompts), and that
+          # variable outranks core.sshCommand, so the key would never be offered.
+          printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile %s/.ssh/ci_key\n  IdentitiesOnly yes\n' "$HOME" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          git ls-remote git@github.com:jpurnell/SwiftTLSKit.git HEAD
       - uses: actions/cache@v4
         with:
           path: .build
@@ -79,7 +84,11 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/ci_key && chmod 600 ~/.ssh/ci_key
           ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts
-          git config --global core.sshCommand "ssh -i $HOME/.ssh/ci_key -o IdentitiesOnly=yes"
+          # An ssh config entry, not git's core.sshCommand: SwiftPM sets GIT_SSH_COMMAND itself (to stop prompts), and that
+          # variable outranks core.sshCommand, so the key would never be offered.
+          printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile %s/.ssh/ci_key\n  IdentitiesOnly yes\n' "$HOME" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          git ls-remote git@github.com:jpurnell/SwiftTLSKit.git HEAD
       - uses: actions/cache@v4
         with:
           path: .build
