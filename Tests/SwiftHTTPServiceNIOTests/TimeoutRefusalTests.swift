@@ -237,6 +237,9 @@ struct TimeoutRefusalTests {
             #expect(elapsed >= Self.limit - .milliseconds(5))
             // TIMING: the documented limit plus a second of scheduling slack.
             #expect(elapsed <= Self.limit + Self.slack)
+            // The reset is seen on the wire before the producer's task is resumed with the error: wait for it, bounded.
+            let told = ContinuousClock.now + .seconds(3)
+            while failedAt.withLockedValue({ $0 }) == nil, ContinuousClock.now < told { try await Task.sleep(for: .milliseconds(5)) }
             _ = try #require(failedAt.withLockedValue { $0 }, "the producer was never told the write failed")
             // The connection is still good: GET /ok on stream 3 is answered. HPACK (RFC 7541): 0x82 :method GET, 0x87 :scheme https,
             // 0x04 literal without indexing with name index 4 (:path), 3 octets "/ok", 0x01 name index 1 (:authority), 9 octets.
