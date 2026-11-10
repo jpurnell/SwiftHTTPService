@@ -54,9 +54,13 @@ struct HeadFuzzTests {
         let deadline = ContinuousClock.now + hangBound
         var outcome = Outcome(status: nil, closed: false, hung: false, of: bytes.count)
         while ContinuousClock.now < deadline {
+            // Closed is read before the bytes: everything that arrived before the close is in `received` by then. Read
+            // the other way round, the last of a response and the FIN can land between the two reads, and a complete
+            // answer is recorded as "closed with nothing".
+            let ended = client.isClosed
             var data = client.received
             if let response = PipelineHarness.parse(&data) { outcome.status = response.status; break }
-            if client.isClosed { outcome.closed = true; break }
+            if ended { outcome.closed = true; break }
             try await Task.sleep(for: .milliseconds(5))
         }
         if outcome.status == nil, !outcome.closed { outcome.hung = !client.isClosed }
