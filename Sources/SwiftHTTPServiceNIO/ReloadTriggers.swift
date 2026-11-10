@@ -96,11 +96,19 @@ extension HTTPServer {
     }
 }
 
+/// The write end of the hangup self-pipe, read by the signal handler, which can touch nothing else.
+// Justification: written only with the broadcaster's lock held and before the handler is installed or after it is removed; the handler only reads it.
+nonisolated(unsafe) private var hangupWriteDescriptor: Int32 = -1
+
 /// The process's one `SIGHUP` source, shared by every ``TLSReloadTrigger/hangup()`` stream.
 ///
 /// A signal disposition belongs to the process, not to a stream, so the streams share it: the first to begin saves
-/// what was there and ignores the signal, the last to end puts it back. Without that, each stream saved what the
+/// what was there and installs a handler, the last to end puts it back. Without that, each stream saved what the
 /// one before it had installed, and the first to end could restore the default while another still listened.
+///
+/// The handler writes one byte to a pipe and does nothing else (all a signal handler may safely do); a dispatch read
+/// source on the other end delivers to the streams. A dispatch *signal* source is not used: on Linux it needs the
+/// signal blocked in every thread, and a process-directed signal landing on a thread that does not block it is lost.
 // Justification: every access to `listeners`, `source` and `previous` is inside `lock`.
 final class HangupBroadcaster: @unchecked Sendable {
     static let shared = HangupBroadcaster()
@@ -111,10 +119,10 @@ final class HangupBroadcaster: @unchecked Sendable {
 
     private let lock = NIOLock()
     private var listeners: [UUID: AsyncStream<Void>.Continuation] = [:]
-    private var source: (any DispatchSourceSignal)?
+    private var source: (any DispatchSourceRead)?
     private var previous: (@convention(c) (Int32) -> Void)?
 
-    /// Starts delivering to `continuation`, installing the source if it is the first. Returns its handle.
+    /// Starts delivering to `continuation`, installing the handler if it is the first. Returns its handle.
     func add(_ continuation: AsyncStream<Void>.Continuation) -> UUID {
         let id = UUID()
         lock.withLock {
@@ -135,27 +143,45 @@ final class HangupBroadcaster: @unchecked Sendable {
     // Both run with the lock held.
 
     private func install() {
-        previous = signal(SIGHUP, SIG_IGN)
-        let made = DispatchSource.makeSignalSource(signal: SIGHUP, queue: DispatchQueue.global())
+        var ends: [Int32] = [-1, -1]
+        guard pipe(&ends) == 0 else {
+            // No pipe: ignore the signal rather than let it end the process; the streams hear nothing.
+            previous = signal(SIGHUP, SIG_IGN)
+            return
+        }
+        let reading = ends[0]
+        let writing = ends[1]
+        for descriptor in [reading, writing] {
+            _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK)
+            _ = fcntl(descriptor, F_SETFD, FD_CLOEXEC)
+        }
+        let made = DispatchSource.makeReadSource(fileDescriptor: reading, queue: DispatchQueue.global())
         made.setEventHandler { [self] in
+            var scratch = [UInt8](repeating: 0, count: 64)
+            let count = read(reading, &scratch, scratch.count)
+            guard count > 0 else { return }
             let heard = lock.withLock { Array(listeners.values) }
             for continuation in heard { continuation.yield() }
         }
-        // A source listens only once libdispatch has registered it, which happens asynchronously after `resume()`;
-        // a SIGHUP that arrives before then is ignored (the disposition above) and lost. The stream is handed out
-        // only after registration, so a signal sent once a stream exists is always heard.
-        let registered = DispatchSemaphore(value: 0)
-        made.setRegistrationHandler { registered.signal() }
+        made.setCancelHandler {
+            close(reading)
+            close(writing)
+        }
         made.resume()
-        // Bounded: a source that never registers must not hold the lock (and so every stream) forever.
-        _ = registered.wait(timeout: .now() + .seconds(2))
         source = made
+        hangupWriteDescriptor = writing
+        // A byte written before the source is registered waits in the pipe and is read when it is.
+        previous = signal(SIGHUP) { _ in
+            var byte: UInt8 = 1
+            _ = write(hangupWriteDescriptor, &byte, 1)
+        }
     }
 
     private func uninstall() {
-        source?.cancel()
-        source = nil
         signal(SIGHUP, previous)
         previous = nil
+        hangupWriteDescriptor = -1
+        source?.cancel()
+        source = nil
     }
 }

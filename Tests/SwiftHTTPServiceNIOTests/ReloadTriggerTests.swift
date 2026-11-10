@@ -98,17 +98,16 @@ struct ReloadTriggerTests {
         #endif
     }
 
-    @Test("While the stream lives SIGHUP is ignored; when it ends SIGHUP goes back to what it was")
+    @Test("While the stream lives SIGHUP is not at its default; when it ends SIGHUP goes back to what it was")
     func hangupRestores() async throws {
         try await waitForNoHangupStreams()
-        let ignored = unsafeBitCast(SIG_IGN, to: Int.self)
         let standard = unsafeBitCast(SIG_DFL, to: Int.self)
         signal(SIGHUP, SIG_DFL)                                  // the starting disposition: the default
         #expect(hangupDisposition() == standard)
         let stream = TLSReloadTrigger.hangup()
         let consumer = Task { for await _ in stream {} }
         try await Task.sleep(for: .milliseconds(100))
-        #expect(hangupDisposition() == ignored)                  // the signal source owns it now
+        #expect(hangupDisposition() != standard)                 // the broadcaster's handler owns it now: not the default, which ends the process
         consumer.cancel()
         await consumer.value
         var after = -1
@@ -120,10 +119,9 @@ struct ReloadTriggerTests {
         #expect(after == standard, "left installed: \(after)")
     }
 
-    @Test("Two hangup streams at once both hear a SIGHUP; ending one leaves SIGHUP ignored for the other, not at its default")
+    @Test("Two hangup streams at once both hear a SIGHUP; ending one leaves SIGHUP handled for the other, not at its default")
     func overlappingHangups() async throws {
         try await waitForNoHangupStreams()
-        let ignored = unsafeBitCast(SIG_IGN, to: Int.self)
         let standard = unsafeBitCast(SIG_DFL, to: Int.self)
         signal(SIGHUP, SIG_DFL)
         let first = TLSReloadTrigger.hangup()
@@ -144,7 +142,7 @@ struct ReloadTriggerTests {
         firstTask.cancel()
         await firstTask.value
         try await Task.sleep(for: .milliseconds(200))
-        #expect(hangupDisposition() == ignored)
+        #expect(hangupDisposition() != standard)                            // still the handler, not the default
         kill(getpid(), SIGHUP)                                              // would end the process if the default were back
         let again = ContinuousClock.now + .seconds(3)
         while secondHeard.withLockedValue({ $0 }) < 2, ContinuousClock.now < again { try await Task.sleep(for: .milliseconds(10)) }
