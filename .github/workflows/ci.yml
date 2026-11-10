@@ -47,13 +47,17 @@ jobs:
           DEPLOY_KEY: ${{ secrets.SWIFTTLSKIT_DEPLOY_KEY }}
         run: |
           if [ -z "$DEPLOY_KEY" ]; then echo "SWIFTTLSKIT_DEPLOY_KEY is not set (a fork's pull request has no secrets); the dependency cannot be fetched."; exit 1; fi
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/ci_key && chmod 600 ~/.ssh/ci_key
-          ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts
-          # An ssh config entry, not git's core.sshCommand: SwiftPM sets GIT_SSH_COMMAND itself (to stop prompts), and that
-          # variable outranks core.sshCommand, so the key would never be offered.
-          printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile %s/.ssh/ci_key\n  IdentitiesOnly yes\n' "$HOME" > ~/.ssh/config
-          chmod 600 ~/.ssh/config
+          # In this container ssh looks for known_hosts and config in the passwd home (/root), not in $HOME (/github/home, which
+          # Actions sets), so files under ~/.ssh are never read. System-wide files under /etc/ssh are read whatever the home is.
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/ci_key" && chmod 600 "$HOME/.ssh/ci_key"
+          ssh-keyscan -t ed25519,rsa github.com >> /etc/ssh/ssh_known_hosts
+          mkdir -p /etc/ssh/ssh_config.d
+          printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile %s/.ssh/ci_key\n  IdentitiesOnly yes\n' "$HOME" > /etc/ssh/ssh_config.d/ci.conf
+          if ! grep -q '^Include /etc/ssh/ssh_config.d' /etc/ssh/ssh_config; then
+            { echo 'Include /etc/ssh/ssh_config.d/*.conf'; cat /etc/ssh/ssh_config; } > /tmp/ssh_config
+            cp /tmp/ssh_config /etc/ssh/ssh_config
+          fi
           git ls-remote git@github.com:jpurnell/SwiftTLSKit.git HEAD
       - uses: actions/cache@v4
         with:

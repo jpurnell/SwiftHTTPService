@@ -24,9 +24,19 @@ enum H2Wire {
     }
 
     static func settings(_ pairs: [(UInt16, UInt32)] = []) -> [UInt8] {
-        frame(.settings, payload: pairs.flatMap { id, value in
-            [UInt8(id >> 8), UInt8(id & 0xFF), UInt8(value >> 24 & 0xFF), UInt8(value >> 16 & 0xFF), UInt8(value >> 8 & 0xFF), UInt8(value & 0xFF)]
-        })
+        var payload: [UInt8] = []
+        for (id, value) in pairs {
+            // Each pair is a 16-bit identifier and a 32-bit value, big-endian (RFC 9113 section 6.5.1). Written out a byte at a
+            // time, in typed steps, because one long expression of them is more than the compiler will check on a slow machine.
+            let identifierHigh: UInt8 = UInt8(id >> 8)
+            let identifierLow: UInt8 = UInt8(id & 0xFF)
+            let valueByte3: UInt8 = UInt8((value >> 24) & 0xFF)
+            let valueByte2: UInt8 = UInt8((value >> 16) & 0xFF)
+            let valueByte1: UInt8 = UInt8((value >> 8) & 0xFF)
+            let valueByte0: UInt8 = UInt8(value & 0xFF)
+            payload += [identifierHigh, identifierLow, valueByte3, valueByte2, valueByte1, valueByte0]
+        }
+        return frame(.settings, payload: payload)
     }
 
     static let settingsAck = frame(.settings, flags: ack)
@@ -82,10 +92,18 @@ struct ReceivedFrame {
     /// A SETTINGS frame's (identifier, value) pairs.
     var settingPairs: [(UInt16, UInt32)] {
         guard type == H2Wire.FrameType.settings.rawValue, flags & H2Wire.ack == 0 else { return [] }
-        return stride(from: 0, to: payload.count - 5, by: 6).map { index in
-            (UInt16(payload[index]) << 8 | UInt16(payload[index + 1]),
-             payload[index + 2..<index + 6].reduce(0) { $0 << 8 | UInt32($1) })
+        var pairs: [(UInt16, UInt32)] = []
+        var index = 0
+        while index + 6 <= payload.count {
+            let identifierHigh = UInt16(payload[index])
+            let identifierLow = UInt16(payload[index + 1])
+            let identifier: UInt16 = (identifierHigh << 8) | identifierLow
+            var value: UInt32 = 0
+            for byte in payload[(index + 2)..<(index + 6)] { value = (value << 8) | UInt32(byte) }
+            pairs.append((identifier, value))
+            index += 6
         }
+        return pairs
     }
 }
 
