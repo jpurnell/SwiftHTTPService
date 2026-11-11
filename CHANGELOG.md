@@ -6,6 +6,36 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-beta.1] - 2026-11-11
+
+The API is frozen for the 1.0 line, pending what the beta turns up. A final audit of the public surface and a review of the
+trusted-proxy, `X-Forwarded-For`, redirect and cookie rules (by a reviewer with no part in writing them; not a human
+outside the project) found no blocker; the fixes below came out of them.
+
+### Changed (source-breaking only for a caller that reached for what was never meant to be called)
+- `ResponseStream.discard()` and `NetworkBlock.canonicalAddress(octets:)` are `package` access, not `public`: they existed
+  only for the sibling transport module. No consumer in the workspace used either.
+
+### Fixed
+- **`X-Forwarded-For` longer than 20 entries was attributed to the proxy.** A client behind a trusted, appending proxy could
+  pad the header with commas to share the proxy's rate-limit key and escape a per-client ban. The rightmost 20 entries are
+  now read; what is to their left is dropped, never believed, and cannot move the answer.
+- **`X-Forwarded-For` addresses are canonical.** `::ffff:203.0.113.9` and `203.0.113.9` were two clients to a limit keyed on
+  the result; the PROXY path already collapsed them.
+- **`__Host-` and `__Secure-` prefixes are checked in any case**, as browsers match them (`__host-a` with a `Domain` was
+  accepted here and dropped by the browser).
+
+### Known, and left as designed (decisions for 1.0)
+- `X-Forwarded-For` entries with a port (`203.0.113.9:443`) or brackets fail closed to the peer; a proxy that appends them
+  (some Azure gateways) gets one key for every client. Accepting them is a feature, not a fix, and is not in the beta.
+- `redirect(to:allowing:)` does not validate its `origins` entries (`"https:"` would admit any host); `Cookie` accepts a
+  `Domain` with empty labels (`a..b`), which browsers ignore; `cookie(named:)` returns the first of duplicate names.
+- Public API exposes `ReloadMode` and `ReloadOutcome` from SwiftTLSKit, which is still 0.x (`.upToNextMinor`), so a
+  SwiftTLSKit minor can break this API's callers. **1.0.0 final should wait on SwiftTLSKit 1.0 or on types of this kit's own.**
+- Public enums (`CookieError`, `TransportRefusal`, `Forwarding` and the rest) are exhaustive: a new case in a 1.x minor is
+  source-breaking for a caller that switches over all of them without a default. Where that matters, write a `default`.
+- Still unrun for 1.0.0: memory and descriptor growth over days (`Scripts/soak.sh`).
+
 ## [0.8.1] - 2026-11-10
 
 First Linux CI run (Swift 6.2 container); it found two defects the macOS runs had not. Also new: the PROXY protocol check
@@ -466,7 +496,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.1...HEAD
+[1.0.0-beta.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.1...v1.0.0-beta.1
 [0.8.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.6.0...v0.7.0

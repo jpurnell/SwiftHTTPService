@@ -68,7 +68,7 @@ public struct ResponseStream: Sendable, Equatable {
     /// Tells the stream its producer will never run: the transport calls this for a `HEAD`, for a status that has no
     /// body, and when the connection has gone before the response could be sent. A layer that wants to know when a
     /// stream ended (see ``observing(_:)``) hears of it here, since ``produce`` will not report it.
-    public func discard() { discarded() }
+    package func discard() { discarded() }
 
     /// Whether two values are the same stream: equal only if one was made from the other by copying.
     public static func == (lhs: ResponseStream, rhs: ResponseStream) -> Bool { lhs.identity == rhs.identity }

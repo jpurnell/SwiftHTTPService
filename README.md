@@ -2,8 +2,9 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 0.8.1 (2026-11-10), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
-in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
+**Status:** 1.0.0-beta.1 (2026-11-11), private, feature complete for the workspace's hand-rolled servers; the API is frozen
+for the 1.0 line pending the beta. What stands between this and 1.0.0 is in `project/master_plan.md` (a multi-day soak, and
+SwiftTLSKit reaching 1.0). The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
 trusted proxies, the PROXY protocol, refusal hooks and TLS reload) exist and are tested. `ijs-dashboard-server` has served on it
 since 2026-10-28 (Teletran 2). SwiftPushHub and FleetWatch have been migrated onto it (merged 2026-10-29; their deploys

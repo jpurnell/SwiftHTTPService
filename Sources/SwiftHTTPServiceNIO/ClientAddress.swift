@@ -28,7 +28,10 @@ extension HTTPFields {
 /// left and a trusted proxy's addition is at the right. The client is the first address, walking from the right,
 /// that is not itself a trusted proxy.
 enum ClientAddress {
-    /// The most `X-Forwarded-For` entries believed. A longer list is not a chain of proxies anyone runs.
+    /// The most `X-Forwarded-For` entries believed, counted from the right. A longer list is not a chain of proxies
+    /// anyone runs, and what is left of the rightmost entries is what a client wrote: it is dropped, not believed, and
+    /// not allowed to move the answer (a client that could push the list past a limit would be attributed to the proxy,
+    /// and share its rate-limit key and its bans).
     static let maximumForwardedEntries = 20
 
     /// The address to attribute a request to.
@@ -54,13 +57,14 @@ enum ClientAddress {
             guard isTrusted(peer), !forwardedFor.isEmpty else { return peer }
             let entries = forwardedFor.joined(separator: ",")
                 .split(separator: ",", omittingEmptySubsequences: false)
+                .suffix(maximumForwardedEntries)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
-            guard entries.count <= maximumForwardedEntries else { return peer }
             for entry in entries.reversed() {
-                guard NetworkBlock.isAddress(entry) else { return peer }      // something not an address: believe none of it
-                if !isTrusted(entry) { return entry }
+                // Something not an address: believe none of it. One spelling per address, so a limit keys on one string.
+                guard let address = NetworkBlock.canonicalAddress(entry) else { return peer }
+                if !isTrusted(address) { return address }
             }
-            return entries.first ?? peer                                      // every hop is a trusted proxy: the first is the client
+            return entries.first.flatMap(NetworkBlock.canonicalAddress) ?? peer   // every hop is a trusted proxy: the first is the client
         }
     }
 }

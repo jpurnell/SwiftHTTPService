@@ -72,8 +72,10 @@ public struct Cookie: Sendable, Equatable {
             guard !domain.isEmpty, domain.utf8.allSatisfy({ Self.isAlphanumeric($0) || $0 == 0x2E || $0 == 0x2D }) else { throw .domain }
         }
         if sameSite == .none, !secure { throw .sameSite }
-        if name.hasPrefix("__Host-"), !(secure && path == "/" && domain == nil) { throw .prefix }
-        if name.hasPrefix("__Secure-"), !secure { throw .prefix }
+        // Browsers match the prefixes in any case, so the check does too.
+        let lowered = name.lowercased()
+        if lowered.hasPrefix("__host-"), !(secure && path == "/" && domain == nil) { throw .prefix }
+        if lowered.hasPrefix("__secure-"), !secure { throw .prefix }
         self.name = name
         self.value = value
         self.maxAge = maxAge

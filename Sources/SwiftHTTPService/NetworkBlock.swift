@@ -55,7 +55,7 @@ public struct NetworkBlock: Sendable, Equatable, CustomStringConvertible {
     }
 
     /// The canonical text of an address given as 4 (IPv4) or 16 (IPv6) octets, or nil for any other length.
-    public static func canonicalAddress(octets: [UInt8]) -> String? {
+    package static func canonicalAddress(octets: [UInt8]) -> String? {
         switch octets.count {
         case 4:
             return text(ofIPv4: octets)

@@ -152,6 +152,8 @@ struct ResponseHelperTests {
         BadCookie(name: "domain with ;", build: { try Cookie(name: "a", value: "v", domain: "a;b") }, error: .domain),
         BadCookie(name: "SameSite=None without Secure", build: { try Cookie(name: "a", value: "v", secure: false, sameSite: .none) }, error: .sameSite),
         BadCookie(name: "__Host- without Secure", build: { try Cookie(name: "__Host-a", value: "v", secure: false) }, error: .prefix),
+        BadCookie(name: "__host- (browsers match the prefix in any case) with a Domain", build: { try Cookie(name: "__host-a", value: "v", domain: "example.com") }, error: .prefix),
+        BadCookie(name: "__SECURE- (any case) without Secure", build: { try Cookie(name: "__SECURE-a", value: "v", secure: false) }, error: .prefix),
         BadCookie(name: "__Host- with a Domain", build: { try Cookie(name: "__Host-a", value: "v", domain: "example.com") }, error: .prefix),
         BadCookie(name: "__Host- with another Path", build: { try Cookie(name: "__Host-a", value: "v", path: "/app") }, error: .prefix),
         BadCookie(name: "__Secure- without Secure", build: { try Cookie(name: "__Secure-a", value: "v", secure: false) }, error: .prefix),
