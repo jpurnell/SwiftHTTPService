@@ -6,7 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
-First Linux CI run (Swift 6.2 container); it found two defects the macOS runs had not.
+## [0.8.1] - 2026-11-10
+
+First Linux CI run (Swift 6.2 container); it found two defects the macOS runs had not. Also new: the PROXY protocol check
+ran against real HAProxy (3.4.7 locally, 2.8 in CI) and passed, and CI now runs it. No API change.
 
 ### Fixed
 - **A refusal could be lost to a reset.** A response followed by `Connection: close` ended with a full close, and
@@ -463,7 +466,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.5.0...v0.6.0

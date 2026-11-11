@@ -2,7 +2,7 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 0.8.0 (2026-11-09), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
+**Status:** 0.8.1 (2026-11-10), private, feature complete for the workspace's hand-rolled servers; the road to 1.0.0 is
 in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
 trusted proxies, the PROXY protocol, refusal hooks and TLS reload) exist and are tested. `ijs-dashboard-server` has served on it

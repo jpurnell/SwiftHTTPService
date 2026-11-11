@@ -206,6 +206,9 @@ the kit to cancel idle work and to guard a loopback bind. All three items shippe
 - [x] `connections` shim removed (FleetWatch still names it). [x] `busy` over TLS, HTTP/1.1 and h2. [x] The rig: timeouts, fuzz, floods, soak,
   TLS reload under traffic, the PROXY protocol (emulated; HAProxy run afterwards, 2026-11-10: all checks passed), Linux CI workflow (run 2026-11-10; green on Linux and macOS from ee380fd).
 
+### Released: 0.8.1 (2026-11-10), the first Linux CI run's fixes
+- [x] A refusal could be lost to a reset when the client was still sending: output half-closed, bounded linger (`RefusalIsReadTests`). [x] `SIGHUP` delivered on Linux (self-pipe). [x] CI green on Linux and macOS; the PROXY protocol check passed against HAProxy 3.4.7 and 2.8, and runs in CI.
+
 ### Released: 0.8.0 (2026-11-09), atomic rate limiting
 - [x] `RateLimiterGroup`: several budgets checked all or nothing, Retry-After the longest refusal, an async clock seam, bounded tables.
   `AtomicRateLimiting.md`. Additive; `RateLimiter` unchanged (its algorithm now lives in an internal `RateTable` both share).
