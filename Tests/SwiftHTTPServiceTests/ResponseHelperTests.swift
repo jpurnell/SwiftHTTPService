@@ -150,6 +150,13 @@ struct ResponseHelperTests {
         BadCookie(name: "empty domain", build: { try Cookie(name: "a", value: "v", domain: "") }, error: .domain),
         BadCookie(name: "domain with space", build: { try Cookie(name: "a", value: "v", domain: "a b") }, error: .domain),
         BadCookie(name: "domain with ;", build: { try Cookie(name: "a", value: "v", domain: "a;b") }, error: .domain),
+        BadCookie(name: "domain of one dot", build: { try Cookie(name: "a", value: "v", domain: ".") }, error: .domain),
+        BadCookie(name: "domain with an empty label", build: { try Cookie(name: "a", value: "v", domain: "a..b") }, error: .domain),
+        BadCookie(name: "domain ending in a dot", build: { try Cookie(name: "a", value: "v", domain: "example.com.") }, error: .domain),
+        BadCookie(name: "domain with two leading dots", build: { try Cookie(name: "a", value: "v", domain: "..example.com") }, error: .domain),
+        BadCookie(name: "domain with a label starting with a hyphen", build: { try Cookie(name: "a", value: "v", domain: "a.-b.com") }, error: .domain),
+        BadCookie(name: "domain with a label ending in a hyphen", build: { try Cookie(name: "a", value: "v", domain: "a-.b.com") }, error: .domain),
+        BadCookie(name: "domain with a label over 63 characters", build: { try Cookie(name: "a", value: "v", domain: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com") }, error: .domain),
         BadCookie(name: "SameSite=None without Secure", build: { try Cookie(name: "a", value: "v", secure: false, sameSite: .none) }, error: .sameSite),
         BadCookie(name: "__Host- without Secure", build: { try Cookie(name: "__Host-a", value: "v", secure: false) }, error: .prefix),
         BadCookie(name: "__host- (browsers match the prefix in any case) with a Domain", build: { try Cookie(name: "__host-a", value: "v", domain: "example.com") }, error: .prefix),
@@ -206,5 +213,41 @@ struct ResponseHelperTests {
         #expect(request.cookie(named: "a") == "1")
         #expect(request.cookies.count == 2)
         #expect(request.cookie(named: "missing") == nil)
+    }
+
+    @Test("Every value of a name can be read, in order, for a caller that must not trust the first of two")
+    func everyCookie() throws {
+        let request = try Self.request(cookies: ["a=1; b=x; a=2", "a=3"])
+        #expect(request.cookies(named: "a") == ["1", "2", "3"])
+        #expect(request.cookies(named: "b") == ["x"])
+        #expect(request.cookies(named: "missing") == [])
+    }
+
+    @Test("Domains that browsers accept are accepted: a registrable name, a subdomain, one leading dot")
+    func goodDomains() throws {
+        for domain in ["example.com", "a.example.com", ".example.com", "xn--bcher-kva.example", "a-b.example", "localhost"] {
+            #expect(try Cookie(name: "a", value: "v", domain: domain).domain == domain, "\(domain)")
+        }
+    }
+
+    // `allowing` entries are origins: scheme://host[:port], nothing else. One that is not is the caller's mistake, said
+    // aloud, not a quiet hole ("https:" would admit every https location).
+    static let badOrigins = ["", "https:", "https://", "https:///", "https://a.example/", "https://a.example/path", "https://a.example?x=1",
+                             "https://a.example#f", "https://u@a.example", "https://a.example:", "https://a.example:99999", "https://a.example:80a",
+                             "ftp://a.example", "//a.example", "a.example", "https://a b", "https://a.example\\evil", "https://[::1", "https://[]"]
+
+    @Test("An origin that is not scheme://host[:port] is refused, whatever the location", arguments: badOrigins)
+    func badOrigin(_ origin: String) throws {
+        #expect(throws: RedirectError.origin) { _ = try Response.redirect(to: "/x", allowing: [origin]) }
+    }
+
+    @Test("Origins of every accepted shape work, under both schemes the kit allows")
+    func goodOrigins() throws {
+        for scheme in ["https", "http"] {
+            for authority in ["a.example", "a.example:8443", "localhost:9085", "[2001:db8::1]:443", "[::1]"] {
+                let origin = "\(scheme)://\(authority)"
+                #expect(try Response.redirect(to: origin + "/x", allowing: [origin]).headers[.location] == origin + "/x", "\(origin)")
+            }
+        }
     }
 }

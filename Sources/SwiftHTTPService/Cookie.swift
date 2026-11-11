@@ -68,9 +68,7 @@ public struct Cookie: Sendable, Equatable {
         guard value.utf8.allSatisfy(Self.isCookieOctet) else { throw .value }
         if let maxAge { guard (0...34_560_000).contains(maxAge) else { throw .maxAge } }
         if let path { guard path.hasPrefix("/"), path.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7F && $0 != 0x3B }) else { throw .path } }
-        if let domain {
-            guard !domain.isEmpty, domain.utf8.allSatisfy({ Self.isAlphanumeric($0) || $0 == 0x2E || $0 == 0x2D }) else { throw .domain }
-        }
+        if let domain { guard Self.isDomain(domain) else { throw .domain } }
         if sameSite == .none, !secure { throw .sameSite }
         // Browsers match the prefixes in any case, so the check does too.
         let lowered = name.lowercased()
@@ -96,6 +94,18 @@ public struct Cookie: Sendable, Equatable {
         if httpOnly { parts.append("HttpOnly") }
         parts.append("SameSite=\(sameSite.rawValue)")
         return parts.joined(separator: "; ")
+    }
+
+    /// A host name as a browser keeps it: dot-separated labels of letters, digits and hyphens, each 1 to 63 long and not
+    /// starting or ending with a hyphen, with at most one leading dot (RFC 6265 ignores it). An empty label is refused.
+    private static func isDomain(_ domain: String) -> Bool {
+        let name = domain.hasPrefix(".") ? domain.dropFirst() : Substring(domain)
+        guard !name.isEmpty, name.utf8.count <= 253 else { return false }
+        return name.split(separator: ".", omittingEmptySubsequences: false).allSatisfy { label in
+            let bytes = Array(label.utf8)
+            guard (1...63).contains(bytes.count), bytes.first != 0x2D, bytes.last != 0x2D else { return false }
+            return bytes.allSatisfy { isAlphanumeric($0) || $0 == 0x2D }
+        }
     }
 
     private static func isAlphanumeric(_ byte: UInt8) -> Bool {
@@ -154,7 +164,18 @@ extension Request {
     }
 
     /// The value of the first cookie named `name`, or nil.
+    ///
+    /// A browser sends the cookie with the longest path first, so the first is the right one for path-scoped duplicates.
+    /// But a sibling subdomain can set a cookie of the same name for the whole site ("cookie tossing"), and the first is
+    /// then whichever the browser sent first. A cookie that carries trust should be named `__Host-`, which no other host
+    /// can set; for one that does not, ``cookies(named:)`` shows when there was more than one.
     public func cookie(named name: String) -> String? {
         cookies.first { $0.name == name }?.value
+    }
+
+    /// The values of every cookie named `name`, in the order sent: empty if there is none, more than one if the name
+    /// was sent twice (see ``cookie(named:)``).
+    public func cookies(named name: String) -> [String] {
+        cookies.filter { $0.name == name }.map(\.value)
     }
 }

@@ -6,6 +6,11 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-beta.2] - 2026-11-11
+
+Closes everything the beta.1 review left open, so the notes there headed "Known, and left as designed" are now fixed
+except the two that are decisions (SwiftTLSKit's 0.x types; exhaustive enums).
+
 ### Fixed
 - **`X-Forwarded-For` entries with a port or brackets were not believed.** `203.0.113.9:443`, `[2001:db8::9]` and
   `[2001:db8::9]:443` fell back to the proxy's address, so behind a proxy that writes them every client shared one
@@ -13,6 +18,20 @@ All notable changes to this project are recorded here. The format follows
   read and dropped. Anything else stays unbelieved: a port that is not 1 to 5 digits or exceeds 65535, an empty or doubled
   port, an unbalanced bracket, brackets around an IPv4 address. An unbracketed IPv6 address is never split into address and
   port. This reverses the behaviour the 1.0.0-beta.1 notes list as "left as designed".
+- **`redirect(to:allowing:)` refuses an `allowing` entry that is not an origin.** `"https:"` or `""` would have admitted
+  every address; an entry must be `http` or `https` `://host[:port]` with no path, query, fragment or user information
+  (host: a DNS name or a bracketed IPv6 literal; port: 1 to 65535). It throws the new `RedirectError.origin`, even when
+  the location would not have matched. No consumer in the workspace calls it.
+- **`Cookie` refuses a malformed `Domain`.** `.`, `a..b`, `example.com.`, a label starting or ending with a hyphen and a label
+  over 63 characters were accepted and then ignored by the browser. One leading dot is still allowed (RFC 6265 ignores it).
+
+### Added
+- `Request.cookies(named:)`: every value sent for a name, in order. `cookie(named:)` still returns the first, which is right
+  for path-scoped duplicates; the doc now says a cookie that carries trust should be `__Host-`, which a sibling subdomain
+  cannot set, and that `cookies(named:)` shows when a name came twice.
+
+### Changed
+- `RedirectError` gained a case (`.origin`): a caller with an exhaustive `switch` over it needs one more branch.
 
 ## [1.0.0-beta.1] - 2026-11-11
 
@@ -504,7 +523,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.1...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.2...HEAD
+[1.0.0-beta.2]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.1...v1.0.0-beta.1
 [0.8.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.7.0...v0.8.0

@@ -13,6 +13,8 @@ public enum RedirectError: Error, Equatable, Sendable {
     case location
     /// The status is not one of 301, 302, 303, 307 and 308.
     case status
+    /// An entry of `allowing` is not `scheme://host[:port]`: a misconfiguration, refused whatever the location is.
+    case origin
 }
 
 private enum SafetyHeader {
@@ -70,16 +72,48 @@ extension Response {
     /// - Parameters:
     ///   - location: Where to go.
     ///   - status: 301, 302, 303, 307 or 308. Default 302.
-    ///   - origins: Origins that may be redirected to, as `scheme://host[:port]` with no trailing slash.
-    /// - Throws: ``RedirectError``, which never carries the location.
+    ///   - origins: Origins that may be redirected to, as `http` or `https` `://host[:port]` with no path, no trailing
+    ///     slash, no user information. The host is a name or a bracketed IPv6 literal.
+    /// - Throws: ``RedirectError``, which never carries the location. An entry of `origins` that is not an origin
+    ///   is `.origin`, even if the location would not have matched it: `"https:"` would admit every https address.
     public static func redirect(
         to location: String, status: HTTPResponse.Status = .found, allowing origins: [String] = []
     ) throws(RedirectError) -> Response {
         guard [301, 302, 303, 307, 308].contains(status.code) else { throw .status }
+        guard origins.allSatisfy(isOrigin) else { throw .origin }
         guard isSafeLocation(location, origins: origins) else { throw .location }
         var headers = HTTPFields()
         headers[.location] = location
         return Response(status: status, headers: headers)
+    }
+
+    /// `http://` or `https://`, a host (a DNS name, or an IPv6 literal in brackets) and an optional `:port`, and nothing more.
+    private static func isOrigin(_ text: String) -> Bool {
+        let authority: Substring
+        if text.hasPrefix("https://") { authority = text.dropFirst(8) } else if text.hasPrefix("http://") { authority = text.dropFirst(7) } else { return false }
+        var host = authority
+        var port: Substring?
+        if authority.hasPrefix("[") {
+            guard let close = authority.firstIndex(of: "]") else { return false }
+            host = authority[authority.startIndex...close]
+            let rest = authority[authority.index(after: close)...]
+            if !rest.isEmpty {
+                guard rest.hasPrefix(":") else { return false }
+                port = rest.dropFirst()
+            }
+            let inner = host.dropFirst().dropLast()
+            guard inner.contains(":"), inner.utf8.allSatisfy({ $0 == 0x3A || $0 == 0x2E || ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x46) || ($0 >= 0x61 && $0 <= 0x66) }) else { return false }
+        } else {
+            let parts = authority.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            host = parts[0]
+            if parts.count == 2 { port = parts[1] }
+            let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+            guard !host.isEmpty, labels.allSatisfy({ label in
+                !label.isEmpty && label.utf8.allSatisfy { ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x5A) || ($0 >= 0x61 && $0 <= 0x7A) || $0 == 0x2D }
+            }) else { return false }
+        }
+        guard let port else { return true }
+        return (1...5).contains(port.count) && port.utf8.allSatisfy { $0 >= 0x30 && $0 <= 0x39 } && (Int(port) ?? 65_536) <= 65_535
     }
 
     private static func isSafeLocation(_ location: String, origins: [String]) -> Bool {
