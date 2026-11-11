@@ -84,7 +84,13 @@ jobs:
       # The PROXY protocol against an independent implementation: our own tests share our reading of the specification.
       - name: PROXY protocol against HAProxy
         run: |
-          apt-get install -y --no-install-recommends haproxy curl   # the script requests with curl, which the image lacks
+          # The package index is not guaranteed to be here: the step above refreshes it only if it had to install ssh.
+          # Retried, since a mirror that answers badly once is not a reason to fail a release.
+          for attempt in 1 2 3; do
+            if apt-get update && apt-get install -y --no-install-recommends haproxy curl; then break; fi   # curl: the script's requests; the image lacks it
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep 5
+          done
           haproxy -v | head -1
           ./Scripts/proxy-protocol-check.sh
 

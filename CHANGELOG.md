@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- CI: the Linux HAProxy step refreshes the apt package index itself (and retries), instead of relying on an earlier step having done it. The beta.2 run failed there with `Unable to locate package haproxy`; its tests passed. No source change since `v1.0.0-beta.2`.
+
 ## [1.0.0-beta.2] - 2026-11-11
 
 Closes everything the beta.1 review left open, so the notes there headed "Known, and left as designed" are now fixed
