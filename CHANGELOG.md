@@ -6,6 +6,14 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **`X-Forwarded-For` entries with a port or brackets were not believed.** `203.0.113.9:443`, `[2001:db8::9]` and
+  `[2001:db8::9]:443` fell back to the proxy's address, so behind a proxy that writes them every client shared one
+  rate-limit key and one ban (one abusive client could get the proxy throttled for all). The port and brackets are now
+  read and dropped. Anything else stays unbelieved: a port that is not 1 to 5 digits or exceeds 65535, an empty or doubled
+  port, an unbalanced bracket, brackets around an IPv4 address. An unbracketed IPv6 address is never split into address and
+  port. This reverses the behaviour the 1.0.0-beta.1 notes list as "left as designed".
+
 ## [1.0.0-beta.1] - 2026-11-11
 
 The API is frozen for the 1.0 line, pending what the beta turns up. A final audit of the public surface and a review of the

@@ -61,10 +61,33 @@ enum ClientAddress {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
             for entry in entries.reversed() {
                 // Something not an address: believe none of it. One spelling per address, so a limit keys on one string.
-                guard let address = NetworkBlock.canonicalAddress(entry) else { return peer }
+                guard let address = address(in: entry) else { return peer }
                 if !isTrusted(address) { return address }
             }
-            return entries.first.flatMap(NetworkBlock.canonicalAddress) ?? peer   // every hop is a trusted proxy: the first is the client
+            return entries.first.flatMap(address(in:)) ?? peer   // every hop is a trusted proxy: the first is the client
         }
+    }
+
+    /// The canonical address an `X-Forwarded-For` entry names, or nil if it names none.
+    ///
+    /// Proxies write `203.0.113.9`, `203.0.113.9:443`, `2001:db8::9`, `[2001:db8::9]` and `[2001:db8::9]:443`; the port
+    /// is dropped. Only those forms: a colon in an unbracketed entry is a port only if the rest is an IPv4 address, since
+    /// `2001:db8::9:443` is an IPv6 address, and a port must be 1 to 5 digits and at most 65535.
+    private static func address(in entry: String) -> String? {
+        func isPort(_ text: Substring) -> Bool {
+            (1...5).contains(text.count) && text.utf8.allSatisfy { $0 >= 0x30 && $0 <= 0x39 } && (Int(text) ?? 65_536) <= 65_535
+        }
+        if entry.hasPrefix("[") {
+            guard let close = entry.firstIndex(of: "]") else { return nil }
+            let inner = entry[entry.index(after: entry.startIndex)..<close]
+            let rest = entry[entry.index(after: close)...]
+            guard inner.contains(":"), rest.isEmpty || (rest.hasPrefix(":") && isPort(rest.dropFirst())) else { return nil }
+            return NetworkBlock.canonicalAddress(String(inner))
+        }
+        let colons = entry.filter { $0 == ":" }.count
+        guard colons == 1, let colon = entry.firstIndex(of: ":") else { return NetworkBlock.canonicalAddress(entry) }
+        guard isPort(entry[entry.index(after: colon)...]) else { return nil }
+        let host = String(entry[..<colon])
+        return host.contains(".") ? NetworkBlock.canonicalAddress(host) : nil
     }
 }
