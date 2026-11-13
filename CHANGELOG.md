@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **SwiftTLSKit `0.2.1` → `1.0.0-beta.1`, pinned exactly** (SwiftPM ranges do not select prereleases). No source change: the package builds, all 555 tests pass (230 and 325 in the two runs) and `diagnose-api-breaking-changes v1.0.0-beta.2` reports no breakage in either module, so `ReloadMode`, `ReloadOutcome` and the reload triggers are unchanged for callers. This resolves the dependency half of the beta.1 note "1.0.0 final should wait on SwiftTLSKit 1.0": the kit now sits on a 1.0 line, though still a prerelease.
+
 ### Added
 - CI: the macOS job ends with `swift package diagnose-api-breaking-changes v1.0.0-beta.2`, so the API freeze is enforced, not only declared. Checked both ways: no breakage against beta.2, and against beta.1 it reports `RedirectError.origin` as a new enum case.
 

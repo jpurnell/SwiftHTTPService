@@ -35,8 +35,9 @@ let package = Package(
         // The transport's HTTP/2: frames, streams and flow control. Transport target only.
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.46.0"),
         // The owner's own, and only the transport target's: it loads and judges the server's TLS identity,
-        // reloads a renewed certificate, and classifies a bind as exposed plaintext. Pre-1.0, a minor is a source break.
-        .package(url: "git@github.com:jpurnell/SwiftTLSKit.git", .upToNextMinor(from: "0.2.1")),
+        // reloads a renewed certificate, and classifies a bind as exposed plaintext. Pinned exactly, as SwiftPM's ranges do not
+        // select prereleases; this kit's API exposes its `ReloadMode` and `ReloadOutcome`, so move it only with a release of this kit.
+        .package(url: "git@github.com:jpurnell/SwiftTLSKit.git", exact: "1.0.0-beta.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
     ],
     targets: [

@@ -118,7 +118,7 @@ returns keeps its connection open until it returns, the peer leaves, or a shutdo
 
 The core needs `swift-http-types` and nothing else. The transport adds Apple's `swift-nio` and
 `swift-nio-extras` (for `ServerQuiescingHelper`, which does the graceful shutdown), `swift-nio-http2` and the owner's
-**SwiftTLSKit** (`0.2.1`, by URL, `.upToNextMinor`; private), of the transport target only.
+**SwiftTLSKit** (`1.0.0-beta.1`, by URL, pinned exactly; private), of the transport target only.
 Resolving `swift-nio-extras` also resolves its own dependencies, one of which, `swift-service-lifecycle`, is
 the Swift Server Workgroup's and not Apple's; nothing in this package links it.
 
