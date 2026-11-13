@@ -19,6 +19,11 @@
 # macOS: the manifest says swift-tools-version 6.2, which needs Xcode 26. "macos-latest" may still carry an older
 # default Xcode, so the job selects the newest Xcode installed on the image and prints the compiler it got.
 #
+# The API freeze. The macOS job ends by comparing the public API with the baseline release below
+# (`swift package diagnose-api-breaking-changes`), and fails on a source- or ABI-breaking change. The baseline is the
+# newest release the freeze protects: move it forward when a release is cut, never to excuse a change. A change that is
+# meant to break (a major version) goes in a breakage allowlist file reviewed with the change; nothing is allowlisted now.
+#
 # quality-gate is not installed on the runners (it is the owner's tool, and the git hooks run it): CI builds and tests.
 
 name: CI
@@ -97,9 +102,13 @@ jobs:
   macos:
     name: macOS
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      API_BASELINE: v1.0.0-beta.2
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the baseline is a tag; a shallow clone has none
       - name: Newest Xcode on the image (the manifest needs Swift 6.2)
         run: |
           newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
@@ -126,3 +135,5 @@ jobs:
       - run: swift package resolve
       - run: swift build --build-tests
       - run: swift test
+      - name: API freeze (public API against ${{ env.API_BASELINE }})
+        run: swift package diagnose-api-breaking-changes "$API_BASELINE"

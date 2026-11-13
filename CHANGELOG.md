@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- CI: the macOS job ends with `swift package diagnose-api-breaking-changes v1.0.0-beta.2`, so the API freeze is enforced, not only declared. Checked both ways: no breakage against beta.2, and against beta.1 it reports `RedirectError.origin` as a new enum case.
+
 ### Fixed
 - CI: the Linux HAProxy step refreshes the apt package index itself (and retries), instead of relying on an earlier step having done it. The beta.2 run failed there with `Unable to locate package haproxy`; its tests passed. No source change since `v1.0.0-beta.2`.
 

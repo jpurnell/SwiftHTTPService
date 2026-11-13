@@ -226,7 +226,7 @@ The code is feature complete; what is left is evidence and a promise not to brea
 - [x] ~~Fuzz the request-target, PROXY-header and form parsers; load-test the connection cap and the HTTP/2 flood defences.~~ 0.7.0: no defect found.
 - [x] ~~An outside review of the trusted-proxy, `X-Forwarded-For`, redirect and cookie rules.~~ Done 2026-11-11 by a reviewer given only the code and no part in writing it (an AI reviewer, **not a human outside the project**; if a person's review is still wanted, it is open). No blocker. Fixed: more than 20 `X-Forwarded-For` entries attributed a client to the proxy; XFF addresses not canonical; cookie prefixes case-sensitive. The first beta left four as designed; beta.2 (2026-11-11) fixed them: ports and brackets in XFF are read, `origins` entries are validated (`RedirectError.origin`), empty `Domain` labels are refused, `Request.cookies(named:)` added for duplicate names.
 - [x] ~~API audit and freeze~~ 2026-11-11: two transport-only symbols made `package`; documentation on every public declaration; enums and the SwiftTLSKit leak recorded as decisions in the 1.0.0-beta.1 changelog. **Before 1.0.0:** SwiftTLSKit 1.0 (or this kit's own reload types), the multi-day soak, a week of the beta in the consumers.
-- [ ] After tagging the beta: add `swift package diagnose-api-breaking-changes v1.0.0-beta.2` to CI, so the freeze is enforced and not only declared.
+- [x] ~~After tagging the beta: add `swift package diagnose-api-breaking-changes v1.0.0-beta.2` to CI, so the freeze is enforced and not only declared.~~ Done in the macOS job (baseline in `API_BASELINE`); verified to pass against beta.2 and to flag the beta.1→beta.2 enum case.
 - Deferred on purpose: VaultMCP and SwiftMCPServer migrations, h2c, WebSockets.
 
 ---
