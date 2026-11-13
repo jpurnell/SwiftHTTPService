@@ -2,7 +2,7 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 1.0.0-beta.2 (2026-11-11), private, feature complete for the workspace's hand-rolled servers; the API is frozen
+**Status:** 1.0.0-beta.3 (2026-11-13), private, feature complete for the workspace's hand-rolled servers; the API is frozen
 for the 1.0 line pending the beta. What stands between this and 1.0.0 is in `project/master_plan.md` (a multi-day soak, and
 SwiftTLSKit reaching 1.0). The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
