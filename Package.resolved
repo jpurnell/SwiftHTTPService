@@ -1,5 +1,5 @@
 {
-  "originHash" : "bbc2f9e84af90960e5c1f7d3d2fb1d19b58636d8880fcbe219948577abfe9e0e",
+  "originHash" : "6fe4c6daaab6d1fa381a21780cb858b9b021574bce21e86e97c0429b4260238e",
   "pins" : [
     {
       "identity" : "swift-algorithms",
@@ -114,8 +114,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio.git",
       "state" : {
-        "revision" : "6db9d9abd92ad7399b8a564cafbb87d3507245fa",
-        "version" : "2.104.0"
+        "revision" : "2f58d8ef84438d6517fc78bcea2f8527e3c72936",
+        "version" : "2.105.0"
       }
     },
     {
@@ -141,8 +141,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio-ssl.git",
       "state" : {
-        "revision" : "322f3c2a4a21df31c84ca416bf65ee5e9059e440",
-        "version" : "2.37.5"
+        "revision" : "15e0b9e495786807272dd4891fa4bac76aa43034",
+        "version" : "2.37.6"
       }
     },
     {
@@ -177,8 +177,8 @@
       "kind" : "remoteSourceControl",
       "location" : "git@github.com:jpurnell/SwiftTLSKit.git",
       "state" : {
-        "revision" : "c2486732c556c53ccf4e70d14e83dd4b7d58fe62",
-        "version" : "1.0.0-beta.1"
+        "revision" : "d8b33fd070ab18f49c9bfb7937f1458ab60af31f",
+        "version" : "1.0.0"
       }
     }
   ],

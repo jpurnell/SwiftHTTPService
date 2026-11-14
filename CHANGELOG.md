@@ -6,6 +6,14 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-beta.4] - 2026-11-14
+
+Points at the stable SwiftTLSKit. No source change since `v1.0.0-beta.3`.
+
+### Changed
+- **SwiftTLSKit `1.0.0-beta.1` → `1.0.0` (stable), `.upToNextMinor(from: "1.0.0")`.** No longer a prerelease pin, so SwiftPM resolves it by range. Resolving also moved `swift-nio` 2.104.0 → 2.105.0 and `swift-nio-ssl` 2.37.5 → 2.37.6, which SwiftTLSKit 1.0.0 asks for. The package builds, all 555 tests pass (230 and 325 in the two runs), and `diagnose-api-breaking-changes v1.0.0-beta.3` reports no breakage in either module, so `ReloadMode`, `ReloadOutcome` and the reload triggers are unchanged for callers. This closes the dependency half of the beta.1 note "1.0.0 final should wait on SwiftTLSKit 1.0": that kit is now stable.
+- CI: the API-freeze baseline is now `v1.0.0-beta.4`.
+
 ## [1.0.0-beta.3] - 2026-11-13
 
 The dependency bump the beta.1 notes asked for, and the API freeze enforced in CI. No source change since `v1.0.0-beta.2`.
@@ -536,7 +544,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.3...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.4...HEAD
+[1.0.0-beta.4]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/jpurnell/SwiftHTTPService/compare/v0.8.1...v1.0.0-beta.1
