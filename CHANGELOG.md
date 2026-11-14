@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+- Session summary `project/summaries/2026-11-14_beta3-beta4-consumers-soak.md`: beta.2 CI follow-ups through beta.4, the consumer bumps, the notarized ijs deploy, and the soak (including why its resident figure is the peak and not the live size).
+
 ### Fixed
 - CI: the macOS job runs `swift test --no-parallel`, as the Linux job does. The timing tests measure the runner's contention when run in parallel; the macOS job failed once on a docs-only commit in two of them (`ReloadTriggerTests`: 2 timer ticks where 3 to 20 are expected; `HTTP2LimitsTests`: the header-limit refusal) and passed on the next two runs. No source change.
 
