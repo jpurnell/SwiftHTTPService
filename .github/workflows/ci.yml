@@ -134,6 +134,8 @@ jobs:
           restore-keys: macos-
       - run: swift package resolve
       - run: swift build --build-tests
-      - run: swift test
+      # Serial, as on Linux (see that job's step): the timing tests measure the runner's contention when they run in parallel.
+      # The macOS job failed once on a docs-only commit in two of them (ReloadTriggerTests, HTTP2LimitsTests) and passed on the next two runs.
+      - run: swift test --no-parallel
       - name: API freeze (public API against ${{ env.API_BASELINE }})
         run: swift package diagnose-api-breaking-changes "$API_BASELINE"

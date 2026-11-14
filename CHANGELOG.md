@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- CI: the macOS job runs `swift test --no-parallel`, as the Linux job does. The timing tests measure the runner's contention when run in parallel; the macOS job failed once on a docs-only commit in two of them (`ReloadTriggerTests`: 2 timer ticks where 3 to 20 are expected; `HTTP2LimitsTests`: the header-limit refusal) and passed on the next two runs. No source change.
+
 ## [1.0.0-beta.4] - 2026-11-14
 
 Points at the stable SwiftTLSKit. No source change since `v1.0.0-beta.3`.
