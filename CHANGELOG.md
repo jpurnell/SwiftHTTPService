@@ -6,6 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-beta.5] - 2026-11-21
+
+Secure-by-default response headers. Source-compatible (the API digester reports no breakage against `v1.0.0-beta.4`), **behavior-changing**: read "Changed (behavior)" before bumping a consumer.
+
 ### Changed (behavior)
 - **Every response now carries safe headers by default** (`ResponseHeaderPolicy.secure`), added in one place, `ResponseRules.prepare`, which every write goes through. That covers handler results, the router's 404 and 405, a middleware's 401 and 429, the 500 made from a thrown error, health, 304, HEAD, streaming heads and SSE, the busy refusals, and every transport refusal, over HTTP/1.1 and HTTP/2. The source API is unchanged (`diagnose-api-breaking-changes v1.0.0-beta.4`: no breakage in either module); **the bytes on the wire are not.** A header a handler already set is never replaced or repeated.
 
@@ -30,6 +34,7 @@ All notable changes to this project are recorded here. The format follows
 - Session summary `project/summaries/2026-11-14_beta3-beta4-consumers-soak.md`: beta.2 CI follow-ups through beta.4, the consumer bumps, the notarized ijs deploy, and the soak (including why its resident figure is the peak and not the live size).
 
 ### Fixed
+- CI: the API-freeze baseline is now `v1.0.0-beta.5`.
 - CI: the macOS job runs `swift test --no-parallel`, as the Linux job does. The timing tests measure the runner's contention when run in parallel; the macOS job failed once on a docs-only commit in two of them (`ReloadTriggerTests`: 2 timer ticks where 3 to 20 are expected; `HTTP2LimitsTests`: the header-limit refusal) and passed on the next two runs. No source change.
 
 ## [1.0.0-beta.4] - 2026-11-14
@@ -570,7 +575,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.4...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.5...HEAD
+[1.0.0-beta.5]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.4...v1.0.0-beta.5
 [1.0.0-beta.4]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.1...v1.0.0-beta.2
