@@ -64,17 +64,29 @@ struct SharedRulesTests {
         fields[try #require(HTTPField.Name("Keep-Alive"))] = "timeout=5"
         fields[try #require(HTTPField.Name("Transfer-Encoding"))] = "chunked"
         fields[try #require(HTTPField.Name("X-Thing"))] = "1"
-        let prepared = ResponseRules.prepare(Response(status: .ok, headers: fields, body: Data("{}".utf8)))
-        let names = Set(prepared.fields.map { $0.name.rawName.lowercased() })
-        #expect(names == ["content-type", "x-thing"])
+        let response = Response(status: .ok, headers: fields, body: Data("{}".utf8))
+        // With a policy that adds nothing, what is left is exactly the handler's own, minus what the transport owns.
+        let bare = ResponseRules.prepare(response, policy: try Self.addsNothing, overTLS: false)
+        #expect(Set(bare.fields.map { $0.name.rawName.lowercased() }) == ["content-type", "x-thing"])
+        // With the default, the safe headers come on top (SecurityHeaders.md section 4.1), and the owned ones are still gone.
+        let secure = ResponseRules.prepare(response, policy: .secure, overTLS: false)
+        #expect(Set(secure.fields.map { $0.name.rawName.lowercased() }) == [
+            "content-type", "x-thing", "x-content-type-options", "cache-control", "referrer-policy", "x-frame-options",
+            "content-security-policy",
+        ])
+    }
+
+    /// A policy that adds no header, so a test about the transport's own rules sees only those.
+    private static var addsNothing: ResponseHeaderPolicy {
+        get throws { try ResponseHeaderPolicy.disabled(because: "this test is about the fields the transport owns") }
     }
 
     @Test("1xx, 204 and 304 carry no body; other final statuses do (RFC 9110 sections 6.4.1 and 15)", arguments: [
         (100, false), (199, false), (200, true), (204, false), (205, true), (304, false), (404, true), (599, true),
     ])
-    func bodyAllowed(_ pair: (Int, Bool)) {
+    func bodyAllowed(_ pair: (Int, Bool)) throws {
         let response = Response(status: HTTPResponse.Status(code: pair.0), headers: HTTPFields(), body: Data("x".utf8))
-        #expect(ResponseRules.prepare(response).hasBody == pair.1)
+        #expect(ResponseRules.prepare(response, policy: try Self.addsNothing, overTLS: false).hasBody == pair.1)
     }
 
     @Test("A final status passes; a non-final one or a thrown error becomes an internal error with no text")

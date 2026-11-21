@@ -275,7 +275,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     private func write(_ response: Response, isHead: Bool, requestEnded: Bool, context: ChannelHandlerContext) {
         cancelBodyTimer()
         state = .done
-        let prepared = ResponseRules.prepare(response)
+        let prepared = ResponseRules.prepare(response, policy: server.headerPolicy, overTLS: server.overTLS)
         var block = HPACKHeaders()
         block.add(name: ":status", value: String(prepared.code))
         // Field names are lower case in HTTP/2 (RFC 9113 section 8.2.1).
@@ -312,7 +312,7 @@ final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
     /// itself failed, `CANCEL` if a limit or the peer ended it. Flow control paces the producer: a write completes
     /// when the connection has taken the frame, which it does as the peer gives its window back.
     private func writeStreaming(_ response: Response, stream: ResponseStream, isHead: Bool, context: ChannelHandlerContext) {
-        let prepared = ResponseRules.prepare(response)
+        let prepared = ResponseRules.prepare(response, policy: server.headerPolicy, overTLS: server.overTLS)
         guard prepared.hasBody else {
             // A status that has no body (204, 304) has nothing to stream: it is an ordinary bodyless response.
             stream.discard()

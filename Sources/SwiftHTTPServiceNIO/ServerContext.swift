@@ -27,6 +27,12 @@ final class ServerContext: Sendable {
         self.routeBodyLimit = routeBodyLimit
     }
 
+    /// The headers added to every response.
+    var headerPolicy: ResponseHeaderPolicy { configuration.responseHeaders }
+    /// Whether this server serves TLS itself, which is the only case HSTS is sent in. Every connection of a server is
+    /// the same kind: there is no listener that is both.
+    var overTLS: Bool { configuration.tls != nil }
+
     /// The body bound for a request: its route's, or the server's. Both are validated at their source, and the
     /// route's may be lower or higher than the server's.
     func bodyLimit(method: HTTPRequest.Method, target: String) -> Int {

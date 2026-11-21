@@ -77,11 +77,13 @@ enum ResponseRules {
         }
     }
 
-    /// The fields and body to write for `response`. A body is dropped for 1xx, 204 and 304, and the
-    /// caller decides whether a HEAD request gets it.
-    static func prepare(_ response: Response) -> Prepared {
+    /// The fields and body to write for `response`, with the server's header policy applied: every write goes through
+    /// here, which is why a response a handler never saw (a refusal, a thrown error's 500) carries the headers too. A body
+    /// is dropped for 1xx, 204 and 304, and the caller decides whether a HEAD request gets it.
+    static func prepare(_ response: Response, policy: ResponseHeaderPolicy, overTLS: Bool) -> Prepared {
         let owned: Set<String> = ["content-length", "connection", "date", "transfer-encoding", "keep-alive"]
-        let fields = response.headers.filter { !owned.contains($0.name.rawName.lowercased()) }
+        let safe = policy.applying(to: response, overTLS: overTLS)
+        let fields = safe.headers.filter { !owned.contains($0.name.rawName.lowercased()) }
         let code = response.status.code
         let hasBody = !(code < 200 || code == 204 || code == 304)
         return Prepared(code: code, fields: Array(fields), hasBody: hasBody, body: response.body)

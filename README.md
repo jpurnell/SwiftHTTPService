@@ -114,6 +114,18 @@ asked and, when it was read, the request line, escaped and cut short) for the lo
 is never run), `Upgrade`, `h2c`, client trailers, server push and HTTP/2 priorities. **Not bounded here:** the time a handler takes. A handler that never
 returns keeps its connection open until it returns, the peer leaves, or a shutdown's grace period ends.
 
+## Response headers
+
+Every response carries a small set of safe headers unless a handler set its own (`ResponseHeaderPolicy.secure`, applied where
+every response is written, so refusals, errors and streams are covered too): `X-Content-Type-Options: nosniff`,
+`Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, a `Content-Security-Policy` of
+`default-src 'none'; frame-ancestors 'none'` on JSON and empty responses only (never on a page), and, **only when the server
+itself serves TLS**, `Strict-Transport-Security: max-age=604800`. HSTS is never inferred from a forwarded header. A handler's
+own value for any of these wins. `ServiceConfiguration(responseHeaders:)` changes the policy (a longer HSTS, or
+`.off`), and `ResponseHeaderPolicy.disabled(because:)` turns it all off by name, with a reason the server's owner is expected to
+log from `HTTPServer.responseHeaderPolicy.optOutReason`. `ResponseHeaderPolicy.applying(to:overTLS:)` is the same logic as a pure
+function for a server that does not use this transport. These headers harden browsers; they do nothing against a client that is not one.
+
 ## Dependencies
 
 The core needs `swift-http-types` and nothing else. The transport adds Apple's `swift-nio` and

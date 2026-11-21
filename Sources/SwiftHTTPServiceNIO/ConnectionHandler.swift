@@ -276,7 +276,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
     private func write(_ response: Response, isHead: Bool, close: Bool, context: ChannelHandlerContext) {
         requestLine = nil
         state = close ? .closing : .idle
-        let prepared = ResponseRules.prepare(response)
+        let prepared = ResponseRules.prepare(response, policy: server.headerPolicy, overTLS: server.overTLS)
         var headers = HTTPHeaders()
         for field in prepared.fields { headers.add(name: field.name.rawName, value: field.value) }
         headers.add(name: "Date", value: HTTPDate.string(for: Date()))
@@ -312,7 +312,7 @@ final class ConnectionHandler: ChannelInboundHandler, @unchecked Sendable {
         _ response: Response, stream: ResponseStream, isHead: Bool, version: HTTPProtocolVersion, context: ChannelHandlerContext
     ) {
         requestLine = nil
-        let prepared = ResponseRules.prepare(response)
+        let prepared = ResponseRules.prepare(response, policy: server.headerPolicy, overTLS: server.overTLS)
         guard prepared.hasBody else {
             // A status that has no body (204, 304) has nothing to stream: it is an ordinary bodyless response.
             stream.discard()

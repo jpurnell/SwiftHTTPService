@@ -161,6 +161,8 @@ public struct ServiceConfiguration: Sendable, Equatable {
     public let trustedProxies: [NetworkBlock]
     /// How a trusted proxy tells the server who the client is.
     public let forwarding: Forwarding
+    /// The safe headers added to every response, and whether HSTS is among them. ``ResponseHeaderPolicy/secure`` unless set.
+    public let responseHeaders: ResponseHeaderPolicy
 
     /// How a proxy in front of the server says who the client is.
     ///
@@ -201,6 +203,27 @@ public struct ServiceConfiguration: Sendable, Equatable {
     public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits(), protocols: Protocols = .http1AndHTTP2,
         connectionReuse: ConnectionReuse = .keepAlive, trustedProxies: [String] = [], forwarding: Forwarding = .none
     ) throws(ConfigurationError) {
+        try self.init(host: host, port: port, tls: tls, limits: limits, protocols: protocols, connectionReuse: connectionReuse,
+                      trustedProxies: trustedProxies, forwarding: forwarding, responseHeaders: .secure)
+    }
+
+    /// Creates a configuration with a response header policy of its own.
+    ///
+    /// - Parameters:
+    ///   - host: The address to bind: a host name or an IP literal.
+    ///   - port: The port to bind. Zero asks the system for a free one.
+    ///   - tls: The TLS identity, or nil to serve plain HTTP.
+    ///   - limits: The bounds.
+    ///   - protocols: Which versions of HTTP the server speaks.
+    ///   - connectionReuse: Whether a connection is kept for the next request.
+    ///   - trustedProxies: The proxies whose word about a client is believed, as CIDR blocks or addresses.
+    ///   - forwarding: How a trusted proxy tells the server who the client is.
+    ///   - responseHeaders: What is added to every response a handler leaves without it.
+    /// - Throws: ``ConfigurationError`` naming the first field that is refused.
+    public init(host: String = "127.0.0.1", port: UInt16 = 8080, tls: TLSFiles? = nil, limits: Limits = Limits(), protocols: Protocols = .http1AndHTTP2,
+        connectionReuse: ConnectionReuse = .keepAlive, trustedProxies: [String] = [], forwarding: Forwarding = .none,
+        responseHeaders: ResponseHeaderPolicy
+    ) throws(ConfigurationError) {
         try Self.validate(host: host)
         if let tls {
             try Self.validate(path: tls.certificateChainPath, field: "tls.certificateChainPath")
@@ -219,6 +242,7 @@ public struct ServiceConfiguration: Sendable, Equatable {
         self.connectionReuse = connectionReuse
         self.trustedProxies = blocks
         self.forwarding = forwarding
+        self.responseHeaders = responseHeaders
     }
 
     // MARK: Validation

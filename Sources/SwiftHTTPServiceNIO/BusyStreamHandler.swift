@@ -32,7 +32,7 @@ final class BusyStreamHandler: ChannelInboundHandler, @unchecked Sendable {
         answered = true
         let peer = context.channel.parent?.remoteAddress?.ipAddress
         let response = server.response(for: .serviceUnavailable, about: RefusalContext(peer: peer, remote: peer, version: .http2))
-        let prepared = ResponseRules.prepare(response)
+        let prepared = ResponseRules.prepare(response, policy: server.headerPolicy, overTLS: server.overTLS)
         var block = HPACKHeaders()
         block.add(name: ":status", value: String(prepared.code))
         for field in prepared.fields { block.add(name: field.name.rawName.lowercased(), value: field.value) }

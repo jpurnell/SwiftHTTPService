@@ -84,7 +84,7 @@ final class BusyRefusalHandler: ChannelInboundHandler, @unchecked Sendable {
         let peer = context.remoteAddress?.ipAddress
         // No PROXY header or X-Forwarded-For has been read, so the client is the peer.
         let response = server.response(for: .serviceUnavailable, about: RefusalContext(peer: peer, remote: peer))
-        let wire = Self.bytes(of: response)
+        let wire = Self.bytes(of: response, policy: server.headerPolicy, overTLS: server.overTLS)
         let finished = context.eventLoop.makePromise(of: Void.self)
         context.writeAndFlush(NIOAny(ByteBuffer(bytes: wire)), promise: finished)
         finished.futureResult.whenComplete { _ in
@@ -99,8 +99,8 @@ final class BusyRefusalHandler: ChannelInboundHandler, @unchecked Sendable {
     }
 
     /// The response as HTTP/1.1 bytes: status line, the handler's fields, the transport's own, the body.
-    static func bytes(of response: Response) -> [UInt8] {
-        let prepared = ResponseRules.prepare(response)
+    static func bytes(of response: Response, policy: ResponseHeaderPolicy, overTLS: Bool) -> [UInt8] {
+        let prepared = ResponseRules.prepare(response, policy: policy, overTLS: overTLS)
         var head = "HTTP/1.1 \(prepared.code) \(ResponseRules.wireStatus(code: prepared.code).reasonPhrase)\r\n"
         for field in prepared.fields { head += "\(field.name.rawName): \(field.value)\r\n" }
         head += "Date: \(HTTPDate.string(for: Date()))\r\n"

@@ -6,6 +6,26 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed (behavior)
+- **Every response now carries safe headers by default** (`ResponseHeaderPolicy.secure`), added in one place, `ResponseRules.prepare`, which every write goes through. That covers handler results, the router's 404 and 405, a middleware's 401 and 429, the 500 made from a thrown error, health, 304, HEAD, streaming heads and SSE, the busy refusals, and every transport refusal, over HTTP/1.1 and HTTP/2. The source API is unchanged (`diagnose-api-breaking-changes v1.0.0-beta.4`: no breakage in either module); **the bytes on the wire are not.** A header a handler already set is never replaced or repeated.
+
+  | Header | Value | On |
+  |---|---|---|
+  | `X-Content-Type-Options` | `nosniff` | every response (the JSON, problem, health, SSE and refusal paths lacked it) |
+  | `Cache-Control` | `no-store` | every response that sets none |
+  | `Referrer-Policy` | `no-referrer` | every response |
+  | `X-Frame-Options` | `DENY` | every response, **HTML pages included** |
+  | `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` | JSON and empty responses only, never a page |
+  | `Strict-Transport-Security` | `max-age=604800` (7 days) | only when the server itself serves TLS |
+
+  What an unmodified consumer will notice: `Response.html`/`css`/`png` called with `cacheControl: nil` become `no-store`; a 304 from `Conditional` now also says `no-store`, so the ETag round trip no longer saves a client a body it may store; a page that is framed by its own site needs its own `X-Frame-Options`; a 301 or 302 has an empty body and so gets the JSON CSP; HSTS appears on every TLS-serving consumer that did not set it (FleetWatch's own year-long value stands). `Server` and `X-Powered-By` are not sent and not stripped: nothing in the kit sets them.
+- `ResponseRules.prepare(_:policy:overTLS:)` replaces `prepare(_:)`, so a write path added later that forgets the policy does not compile. (Transport-internal.)
+
+### Added
+- `ResponseHeaderPolicy` (core): `.secure`, `.disabled(because:)` (a non-blank reason is required; it throws `ConfigurationError` for `responseHeaders.reason`), `applying(to:overTLS:)` as a pure function for a server that does not use this transport, `always`, `apiOnly`, `hsts` (`.whenServingTLS(maxAge:)` or `.off`) and `optOutReason`. HSTS cannot say `includeSubDomains` or `preload`: adding them later is additive, and removing a preload entry takes months.
+- `ServiceConfiguration.init(…, responseHeaders:)`, an overload beside the original (which sets `.secure`), and `ServiceConfiguration.responseHeaders`. The new argument is required on the overload, so no existing call is ambiguous.
+- **Ramping HSTS:** the first value is 7 days so a mistake is bounded to a week. Raise it by configuration (`policy.hsts = .whenServingTLS(maxAge: .seconds(30 * 86_400))`), not code. A pin rollback does not make a browser forget HSTS; clear it with a forward fix that sends `max-age=0` over TLS.
+
 ### Documentation
 - Session summary `project/summaries/2026-11-14_beta3-beta4-consumers-soak.md`: beta.2 CI follow-ups through beta.4, the consumer bumps, the notarized ijs deploy, and the soak (including why its resident figure is the peak and not the live size).
 

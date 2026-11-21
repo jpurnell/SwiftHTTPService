@@ -111,6 +111,12 @@ public final class HTTPServer: Sendable {
             routeBodyLimit: { method, target in router.maximumBodyBytes(for: method, target: target) })
     }
 
+    /// The policy that decides which safe headers every response carries (see ``ResponseHeaderPolicy``).
+    ///
+    /// The kit has no logger of its own, so a server whose owner turned the policy off says so here: print
+    /// ``ResponseHeaderPolicy/optOutReason`` at start, when it is not nil.
+    public var responseHeaderPolicy: ResponseHeaderPolicy { context.configuration.responseHeaders }
+
     /// Opens the listening socket and starts serving.
     ///
     /// - Returns: The address actually bound (useful with port zero).

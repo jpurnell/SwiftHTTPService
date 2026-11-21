@@ -34,8 +34,12 @@ final class PipelineHarness: Sendable {
     let context: ServerContext
 
     /// Builds the production pipeline on a fresh testing channel and connects it to a fake peer.
-    init(limits: Limits = Limits(), handler: @escaping Handler) async throws {
-        let configuration = try ServiceConfiguration(port: 0, limits: limits)
+    convenience init(limits: Limits = Limits(), handler: @escaping Handler) async throws {
+        try await self.init(configuration: try ServiceConfiguration(port: 0, limits: limits), handler: handler)
+    }
+
+    /// As above, for a test that needs a configuration of its own (a header policy, or TLS files that are only named).
+    init(configuration: ServiceConfiguration, handler: @escaping Handler) async throws {
         context = ServerContext(configuration: configuration, handler: handler)
         channel = NIOAsyncTestingChannel()
         try await PipelineBuilder.install(on: channel, context: context, tls: nil)
