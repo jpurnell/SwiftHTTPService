@@ -38,13 +38,20 @@ struct ReloadTriggerTests {
             do { for try await _ in stream { count.withLockedValue { $0 += 1 } } } catch { ended = error }
             return ended
         }
-        try await Task.sleep(for: .milliseconds(400))
+        // Wait for the ticks rather than for a stretch of wall-clock time: a busy machine delays them, it does not
+        // make them fewer than the wait needs. The deadline only bounds a trigger that never ticks.
+        let began = ContinuousClock.now
+        let deadline = began + .seconds(10)
+        while count.withLockedValue({ $0 }) < 3, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
         consumer.cancel()
+        let elapsed = ContinuousClock.now - began
         let ending = await consumer.value                         // returns only because cancelling ended the stream
         let seen = count.withLockedValue { $0 }
-        // 400 ms of 30 ms intervals is about 13; the bounds leave room for a busy machine and still tell
-        // "once per interval" from "never" and from "in a tight loop".
-        #expect((3...20).contains(seen), "saw \(seen)")
+        #expect(seen >= 3, "saw \(seen) in \(elapsed)")
+        // "Once per interval", not "in a tight loop": it cannot have ticked more often than the interval allows
+        // in the time that passed (one extra for the tick at the start of the wait). Load only lowers the count.
+        let allowed = Int(elapsed / .milliseconds(30)) + 1
+        #expect(seen <= allowed, "saw \(seen) in \(elapsed), at most \(allowed) are possible")
         // Cancelling before the next wait begins finishes the stream; cancelling during the wait throws. Both are the end.
         #expect(ending == nil || ending is CancellationError, "ended with \(String(describing: ending))")
     }

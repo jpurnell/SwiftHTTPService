@@ -196,9 +196,17 @@ struct HTTP2LimitsTests {
                     fastDone.withLockedValue { $0 = true }
                     return response
                 }
-                try await Task.sleep(for: .milliseconds(500))
                 // The client keeps to the SETTINGS the server sent, so a second request is held back at one.
-                #expect(fastDone.withLockedValue { $0 } == !secondWaits, "allowed \(allowed)")
+                if secondWaits {
+                    // Holding back is the absence of an answer: a longer wait only makes it more certain, so a fixed one is sound.
+                    try await Task.sleep(for: .milliseconds(500))
+                    #expect(!fastDone.withLockedValue { $0 }, "allowed \(allowed)")
+                } else {
+                    // Being served is the presence of one: wait for it, since a busy machine delays it past any fixed window.
+                    let deadline = ContinuousClock.now + .seconds(10)
+                    while !fastDone.withLockedValue({ $0 }), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+                    #expect(fastDone.withLockedValue { $0 }, "allowed \(allowed)")
+                }
                 await gate.release()
                 #expect(try await slow.value.text == "/slow")
                 #expect(try await fast.value.text == "/fast")

@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Tests: the timing tests wait for what they expect instead of a fixed stretch of wall-clock time, so load delays them without failing them. `ReloadTriggerTests.timerYields` waits for three ticks and bounds the count by the interval and the elapsed time; `HTTP2LimitsTests` waits for the second request to be served when 100 streams are allowed (the held-back case keeps its fixed wait, which load only makes more certain); the two `StreamingHTTP1Tests` cut-off durations are bounded by the 30 s producer they must beat, not by a guess at machine speed. No source change. The flake did not reproduce under 40 spinning processes before or after, so this removes the fragile assumptions rather than a seen failure.
+
 ## [1.0.0-beta.5] - 2026-11-21
 
 Secure-by-default response headers. Source-compatible (the API digester reports no breakage against `v1.0.0-beta.4`), **behavior-changing**: read "Changed (behavior)" before bumping a consumer.

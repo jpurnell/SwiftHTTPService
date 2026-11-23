@@ -401,8 +401,10 @@ struct StreamingHTTP1Tests {
         let client = try await RawClient.connect(to: address, group: group)
         let began = ContinuousClock.now
         try await client.send(get)
-        #expect(try await client.waitUntilClosed(timeout: .seconds(5)))
-        #expect(ContinuousClock.now - began < .seconds(3))
+        // The limit is 300 ms and the idle producer sleeps 30 s: ending well inside 30 s is what tells "cut at the limit"
+        // from "waited for the producer". The bound is that gap, not a guess at how fast the machine is.
+        #expect(try await client.waitUntilClosed(timeout: .seconds(20)))
+        #expect(ContinuousClock.now - began < .seconds(20))
         #expect(ChunkedBody(try #require(client.splitResponse).body).complete == false)
         let deadline = ContinuousClock.now + .seconds(3)
         while !cancelled.withLockedValue({ $0 }), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
@@ -502,8 +504,8 @@ struct StreamingHTTP1Tests {
         await started.wait()
         let began = ContinuousClock.now
         await server.shutdown()
-        #expect(ContinuousClock.now - began < .seconds(5))
-        #expect(try await client.waitUntilClosed())
+        #expect(ContinuousClock.now - began < .seconds(20))      // the grace is 300 ms and the producer sleeps 30 s
+        #expect(try await client.waitUntilClosed(timeout: .seconds(20)))
         let deadline = ContinuousClock.now + .seconds(3)
         while !cancelled.withLockedValue({ $0 }), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
         #expect(cancelled.withLockedValue { $0 })
