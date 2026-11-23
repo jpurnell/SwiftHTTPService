@@ -37,21 +37,30 @@ enum ProcessMeter {
         #endif
     }
 
-    /// The allocator's own account of the heap right now, or nil where the platform cannot give one.
+    /// Whether this platform reports the allocator's own count (`heap()`'s `live` and `retained` mean what they say). Only Darwin
+    /// does: Swift's Glibc module does not expose `mallinfo2`, so there `heap()` falls back to the current resident size.
+    static var hasAllocatorCount: Bool {
+        #if canImport(Darwin)
+        true
+        #else
+        false
+        #endif
+    }
+
+    /// The process's heap right now, or nil where the platform cannot give one.
     ///
-    /// `live` is what the process still holds from `malloc` (a leak raises it, and freeing lowers it); `retained` is what the
-    /// allocator holds beyond that, freed but not returned to the system. Resident size cannot tell these apart, and the peak
-    /// resident size, which is all `getrusage` offers, never falls: it called a flat 17 MB process 807% larger. Both calls
-    /// return a structure by value, so no pointer is taken.
+    /// On Darwin, from the allocator's own account: `live` is what the process still holds from `malloc` (a leak raises it, and
+    /// freeing lowers it); `retained` is what the allocator holds beyond that, freed but not returned to the system. Resident size
+    /// cannot tell these apart, and the peak resident size, which is all `getrusage` offers, never falls: it called a flat 17 MB
+    /// process 807% larger. `mstats()` returns a structure by value, so no pointer is taken. Where there is no allocator count
+    /// (``hasAllocatorCount`` is false), `live` is the current resident size, which does fall, and `retained` is 0.
     static func heap() -> (live: Int, retained: Int)? {
         #if canImport(Darwin)
         let stats = mstats()
         return (Int(stats.bytes_used), Int(stats.bytes_free))
-        #elseif canImport(Glibc)
-        let info = mallinfo2()
-        return (Int(info.uordblks), Int(info.fordblks))
         #else
-        return nil
+        guard let resident = residentBytes() else { return nil }
+        return (resident, 0)
         #endif
     }
 
