@@ -1,6 +1,6 @@
 # Migration Plan — servers that hand-roll HTTP
 
-**Status:** proposed 2026-10-27, for the owner. **Progress (2026-10-29):** ijs-dashboard-server on 0.4.0 (deployed); SwiftPushHub and FleetWatch migrated on kit 0.4.1 and merged to `main`, their deploys pending the owner's runbooks; VaultMCP and SwiftMCPServer not started. **Why:** the Stack Map's `http-service` gap names a missing
+**Status:** proposed 2026-10-27, for the owner. **Progress (2026-10-29):** ijs-dashboard-server on 0.4.0 (deployed); SwiftPushHub and FleetWatch migrated on kit 0.4.1 and merged to `main`, their deploys pending the owner's runbooks; VaultMCP and SwiftMCPServer not started. **Update (2026-11-22):** SwiftMCPServer's adoption is now planned and under way (see §4.4 and `SwiftMCPServer/project/plans/proposals/AdoptSwiftHTTPService.md`); VaultMCP is unchanged. **Why:** the Stack Map's `http-service` gap names a missing
 kit; this repository is it. A survey of the workspace found five servers that each carry their own HTTP
 listener, router and limits. The owner asked for plans to move them.
 
@@ -20,7 +20,7 @@ Counts are from `grep` over each package's `Sources`; I read the files named, no
 | **FleetWatch** | `FleetHTTPServer` (148 lines): one request per connection, `maxConnections = 64`, a 30 s connection timeout, a body cap, TLS through `SwiftTLSKit`. `FleetRouter` (552 lines): a `switch (method, path)` with 53 literal cases, three prefix/suffix cases (`/v1/machines/*/request-report`, `/legacy/*`, `/enroll/*`), HTML/JS/CSS/PNG assets, a form `POST /authorize`, passkey routes on `SwiftWebAuthn` | listener header, route list |
 | **SwiftPushHub** | `HubHTTPServer` (144 lines): the **same** shape as FleetWatch's (one request per connection, `maxConnections = 64`, 30 s timeout), loopback-only plain HTTP until "4d". `HubRouter` (232 lines) with its own `HubRequest`/`HubResponse` types, a 64 KiB body cap, bearer tokens via `swift-oauth` | listener, router header |
 | **VaultMCP** (web target) | `HTTPHandler.swift` (180 lines) and `main.swift` (614 lines, with a `ServerBootstrap` inline) | file sizes, imports |
-| **SwiftMCPServer** (and so `ijs-mcp-server`) | `Transport/` is about 2,200 lines. Routes are a `switch (method, path)` at `MCPServerHandler.swift:304`. Its own source says a consumer needing one more endpoint had to change the package (VaultMCP declined `POST /reindex`) | route switch, one file's header |
+| **SwiftMCPServer** (and so `ijs-mcp-server`) | `Transport/` is ~~about 2,200 lines~~ 3,245 lines (re-counted 2026-11-22; 4,422 with `Response/` and `Session/`). Routes are a `switch (method, path)` at `MCPServerHandler.swift:304`. Its own source says a consumer needing one more endpoint had to change the package (VaultMCP declined `POST /reindex`) | route switch, one file's header |
 | `swift-sdk`, `SwiftMCPClient`, `SwiftTLSKit`, `SwiftCLIKit` | mention NIO HTTP types, but are clients, an SDK fork or TLS configuration | not read |
 
 **The finding that matters:** FleetWatch's and SwiftPushHub's listeners are the same code with different
@@ -91,15 +91,18 @@ only fetch over plain HTTP", which is the least tolerant client in the list.
    client cares about (content type, caching).
 **Risk:** low-medium (one fussy client).
 
-### 4.4 SwiftMCPServer and `ijs-mcp-server` — not wholesale
+### 4.4 SwiftMCPServer and `ijs-mcp-server` — ~~not wholesale~~ (superseded)
 
-The MCP transport needs streaming responses and session handling the kit does not have, and it is 2,200
-lines of protocol-shaped code. Two smaller moves instead, after §3's streaming decision:
-1. Its **extension routes** (`MCPHTTPRoute`, the `GET`-only list added so consumers need not change the
-   package) could be registered on a kit `Router`, which also gives them parameters and a 405 with `Allow`.
-2. Compare its limits with the kit's (the survey did not find the header, connection or timeout limits by
-   name, which is not the same as their being absent) and adopt the stricter of each.
-Replacing the transport entirely is a decision for after the kit can stream, and may never pay.
+**Revisited 2026-11-22** by `SwiftMCPServer/project/plans/proposals/AdoptSwiftHTTPService.md` after streaming shipped (0.4.0). The verdict rested on a transport §5 says was not read; it has now been read. The owner has decided to adopt. This shipped against the bar recorded below ("may never pay"): the verdict and that sentence are kept, struck through, as what was believed at the time.
+
+~~The MCP transport needs streaming responses and session handling the kit does not have, and it is 2,200
+lines of protocol-shaped code. Two smaller moves instead, after §3's streaming decision:~~
+1. ~~Its **extension routes** (`MCPHTTPRoute`, the `GET`-only list added so consumers need not change the
+   package) could be registered on a kit `Router`, which also gives them parameters and a 405 with `Allow`.~~ *(Superseded by the adoption plan, not deleted.)*
+2. ~~Compare its limits with the kit's (the survey did not find the header, connection or timeout limits by
+   name, which is not the same as their being absent) and adopt the stricter of each.~~ *(Superseded by the adoption plan, not deleted.)*
+
+~~Replacing the transport entirely is a decision for after the kit can stream, and may never pay.~~
 
 ## 5. What I did not do
 
@@ -132,7 +135,7 @@ Replacing the transport entirely is a decision for after the kit can stream, and
   recorded-exchange replay (section 4), the new server run beside the old on another port before the cut-over, and the
   previous binary kept for rollback. The dashboard server stays on 0.4.0 and its audit log is watched passively.
 - **D2: A, build streaming responses into the kit.** "We should have all of this done." The consequence is that
-  SwiftMCPServer's transport can eventually move too (§4.4's "not wholesale" is revisited after streaming ships).
+  SwiftMCPServer's transport can eventually move too (§4.4's "not wholesale" is revisited after streaming ships). Revisited: see the proposal above.
 - **D3: A, explicit routes, no tail wildcard.** Evidence: all four FleetWatch "wildcards" are single-segment
   parameters (`/enroll/{code}`, `/enroll/{code}/qr.png`, `/legacy/{name}`, `/v1/machines/{id}/request-report`).
 - **D4: A, migrate FleetWatch fully.** The owner: the kit should "cover all of our needs without having to maintain

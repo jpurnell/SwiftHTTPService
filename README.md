@@ -2,7 +2,7 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 1.1.0 (2026-11-23), private, feature complete for the workspace's hand-rolled servers; the API is frozen for the 1.0 line
+**Status:** 1.1.0 (2026-11-23), ~~private~~ (the GitHub repository is public, checked 2026-11-23), feature complete for the workspace's hand-rolled servers; the API is frozen for the 1.0 line
 and follows semantic versioning from here. How it got here (the API audit, an independent review, a multi-day soak, the beta in the consumers) is
 in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with
@@ -130,7 +130,7 @@ function for a server that does not use this transport. These headers harden bro
 
 The core needs `swift-http-types` and nothing else. The transport adds Apple's `swift-nio` and
 `swift-nio-extras` (for `ServerQuiescingHelper`, which does the graceful shutdown), `swift-nio-http2` and the owner's
-**SwiftTLSKit** (`1.1.0`, by URL, up to the next minor; private), of the transport target only. Its swift-crypto minimum is 5.1.2, which is therefore this package's.
+**SwiftTLSKit** (`1.1.0`, by URL, up to the next minor; ~~private~~, the repository is public, checked 2026-11-23), of the transport target only. Its swift-crypto minimum is 5.1.2, which is therefore this package's.
 Resolving `swift-nio-extras` also resolves its own dependencies, one of which, `swift-service-lifecycle`, is
 the Swift Server Workgroup's and not Apple's; nothing in this package links it.
 
@@ -148,7 +148,7 @@ quality-gate
 jobs run and pass. Linux runs the tests serially (`--no-parallel`): the suite's timing tests use 300 ms limits over real sockets, and on a
 two-core runner in parallel they measure the runner's load. The Linux job also runs the PROXY protocol check against the
 distribution's HAProxy (2.8). The first Linux run found two defects (a refused client that was still sending could lose its
-answer to a reset; `SIGHUP` was not delivered), both fixed in the 0.8.1 changes. The one private dependency, SwiftTLSKit (an SSH URL in `Package.swift`), needs a read-only
+answer to a reset; `SIGHUP` was not delivered), both fixed in the 0.8.1 changes. The one ~~private~~ dependency that CI reaches by SSH, SwiftTLSKit (an SSH URL in `Package.swift`; the repository is now public, so whether the key is still needed is not verified here and the workflow is unchanged), needed a read-only
 **deploy key** on that repository and its private half as the Actions secret `SWIFTTLSKIT_DEPLOY_KEY` on this one; the
 steps are in the workflow's header comment. Pull requests from forks have no secrets and cannot resolve it.
 

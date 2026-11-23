@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+- Reconciled 2026-11-23 and rechecked against 1.1.0 on 2026-11-24 (Appendix A of SwiftMCPServer's `AdoptSwiftHTTPService.md`): the migration plan's section 4.4 verdict is struck through (SwiftMCPServer adoption is now planned); the master plan records the adoption status; README's SwiftTLSKit pin matches `Package.swift`; "private" is struck where the repositories are public (this kit and SwiftTLSKit, checked 2026-11-23); the Linux comment in `Package.swift` matches CI. An earlier version of this reconciliation said the 2026-11-14 soak had no recorded result. It has one (the master plan's soak entry and the 1.0.0 entry below), and that sentence is corrected.
+
 ## [1.1.0] - 2026-11-23
 
 ### Changed
@@ -135,7 +138,7 @@ outside the project) found no blocker; the fixes below came out of them.
   SwiftTLSKit minor can break this API's callers. **1.0.0 final should wait on SwiftTLSKit 1.0 or on types of this kit's own.**
 - Public enums (`CookieError`, `TransportRefusal`, `Forwarding` and the rest) are exhaustive: a new case in a 1.x minor is
   source-breaking for a caller that switches over all of them without a default. Where that matters, write a `default`.
-- Still unrun for 1.0.0: memory and descriptor growth over days (`Scripts/soak.sh`).
+- ~~Still unrun for 1.0.0: memory and descriptor growth over days (`Scripts/soak.sh`).~~ Reconciled 2026-11-23: a multi-day soak was started 2026-11-14 on Chromedome at beta.4 (see the session summary `project/summaries/2026-11-14_beta3-beta4-consumers-soak.md`); **its result was recorded on 2026-11-23** in `project/master_plan.md` and in the 1.0.0 entry above: the run (2026-11-14 to 2026-11-17) failed its own assertion on a bad metric (peak resident size), and the independent sampler showed the live footprint growing about 3 MB over 69 hours.
 
 ## [0.8.1] - 2026-11-10
 
