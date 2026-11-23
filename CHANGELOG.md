@@ -7,6 +7,11 @@ All notable changes to this project are recorded here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- The soak measures the live heap, not the peak resident size. It failed the 69-hour run of 2026-11-14 with "resident memory grew 807%" for a process
+  whose live footprint went from 17 to 20 MB, because `ru_maxrss` is a peak and never falls. `ProcessMeter.heap()` reads the allocator's own account
+  (`mstats()`, `mallinfo2()`): `live` is asserted (25% growth after warm-up, from measured runs), `retained` (freed memory the allocator keeps, over
+  100 MB and flat) and the peak are recorded only. A 5-minute run showed the live heap rise about 340 KiB over its first 15 cycles and then stay level:
+  a one-time fill, not a leak. No source change.
 - Tests: the timing tests wait for what they expect instead of a fixed stretch of wall-clock time, so load delays them without failing them. `ReloadTriggerTests.timerYields` waits for three ticks and bounds the count by the interval and the elapsed time; `HTTP2LimitsTests` waits for the second request to be served when 100 streams are allowed (the held-back case keeps its fixed wait, which load only makes more certain); the two `StreamingHTTP1Tests` cut-off durations are bounded by the 30 s producer they must beat, not by a guess at machine speed. No source change. The flake did not reproduce under 40 spinning processes before or after, so this removes the fragile assumptions rather than a seen failure.
 
 ## [1.0.0-beta.5] - 2026-11-21

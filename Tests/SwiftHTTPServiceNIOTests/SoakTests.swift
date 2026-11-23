@@ -37,6 +37,24 @@ enum ProcessMeter {
         #endif
     }
 
+    /// The allocator's own account of the heap right now, or nil where the platform cannot give one.
+    ///
+    /// `live` is what the process still holds from `malloc` (a leak raises it, and freeing lowers it); `retained` is what the
+    /// allocator holds beyond that, freed but not returned to the system. Resident size cannot tell these apart, and the peak
+    /// resident size, which is all `getrusage` offers, never falls: it called a flat 17 MB process 807% larger. Both calls
+    /// return a structure by value, so no pointer is taken.
+    static func heap() -> (live: Int, retained: Int)? {
+        #if canImport(Darwin)
+        let stats = mstats()
+        return (Int(stats.bytes_used), Int(stats.bytes_free))
+        #elseif canImport(Glibc)
+        let info = mallinfo2()
+        return (Int(info.uordblks), Int(info.fordblks))
+        #else
+        return nil
+        #endif
+    }
+
     /// The number of open file descriptors, counting the one used to list them.
     static func openDescriptors() -> Int? {
         #if canImport(Darwin)
@@ -66,12 +84,17 @@ struct SoakTests {
     /// The first cycles are warm-up: allocators, caches, the TLS context and the event loops reach their working size.
     static let warmupCycles = 3
 
-    /// Allowed growth of the resident size over the baseline (the sample at the end of warm-up), as a fraction: 25%.
-    /// Measured on the development machine, three 60 s runs of about 10,000 sessions each (12 cycles): the worst growth
-    /// after warm-up, of the peak resident size, was +10.2% in one run and 0.0% in another (the first run, measured with a
-    /// different meter, was within +/-5%). 25% is about two and a half times the worst observed. The longer the run, the
-    /// smaller a leak this can see: 25% of 100 MB is 25 MB, so a minute of traffic shows a leak above about 2.5 KB a session.
-    static let residentGrowthLimit = 0.25
+    /// Allowed growth of the live heap over the baseline (the sample at the end of warm-up), as a fraction: 25%.
+    /// Measured on the development machine: a 60 s run (12 cycles, 9,927 sessions) grew 11.3% (3,907 to 4,350 KiB); a 5-minute
+    /// run (63 cycles) grew 6.5% over its first 12 cycles and 8.5% at its worst (338 KiB), then stayed between 4.2 and 4.3 MB
+    /// for the rest: a one-time fill of lazily created state, not a leak. 25% is about twice the worst observed (11.3%).
+    /// The longer the run, the smaller a leak this can see; a minute of traffic shows one above about 100 bytes a session.
+    ///
+    /// The peak resident size (`ru_maxrss`) is recorded and not asserted: it never falls, and over the 69-hour soak of
+    /// 2026-11-14 it read 807% growth for a process whose live footprint went from 17 to 20 MB. What the allocator keeps
+    /// after a free (`retained`, over 100 MB here, flat) is also recorded and not asserted: it is the allocator's, not the
+    /// server's, and the live heap is what a leak raises.
+    static let liveGrowthLimit = 0.25
     /// Allowed growth of the open descriptor count over the baseline. Measured: 27 at every sample of a 60 s run, growth 0.
     /// A leak of one descriptor per session would be thousands in a minute, so 8 (the few that a lazily created resource
     /// might hold) is far below any leak and above nothing observed.
@@ -82,6 +105,8 @@ struct SoakTests {
     struct Sample: Sendable {
         var cycle: Int
         var resident: Int
+        var live: Int
+        var retained: Int
         var descriptors: Int
     }
 
@@ -179,7 +204,7 @@ struct SoakTests {
         }
     }
 
-    @Test("Memory and descriptors do not grow over a long run of opened, abused and closed connections",
+    @Test("The live heap and descriptors do not grow over a long run of opened, abused and closed connections",
           .enabled(if: SoakTests.enabled, "set SOAK_SECONDS to run the soak (Scripts/soak.sh does)"))
     func soak() async throws {
         let total = Double(Self.seconds ?? 0)
@@ -208,10 +233,11 @@ struct SoakTests {
             }
             try await Task.sleep(for: .milliseconds(Int(Self.drainSeconds * 1000)))
             let resident = try #require(ProcessMeter.residentBytes(), "cannot read the process's resident size on this platform")
+            let heap = try #require(ProcessMeter.heap(), "cannot read the process's heap use on this platform")
             let descriptors = try #require(ProcessMeter.openDescriptors(), "cannot count open descriptors on this platform")
-            let sample = Sample(cycle: cycle, resident: resident, descriptors: descriptors)
+            let sample = Sample(cycle: cycle, resident: resident, live: heap.live, retained: heap.retained, descriptors: descriptors)
             samples.append(sample)
-            recordMeasurement("soak sample", "cycle \(cycle) t=\((ContinuousClock.now - began).seconds.rounded()) s resident=\(resident / 1024) KiB fds=\(descriptors)")
+            recordMeasurement("soak sample", "cycle \(cycle) t=\((ContinuousClock.now - began).seconds.rounded()) s live=\(heap.live / 1024) KiB retained=\(heap.retained / 1024) KiB peak-resident=\(resident / 1024) KiB fds=\(descriptors)")
             cycle += 1
         }
 
@@ -224,10 +250,11 @@ struct SoakTests {
         let baseline = samples[Self.warmupCycles - 1]
         let after = samples.dropFirst(Self.warmupCycles)
         let worstResident = after.map(\.resident).max() ?? baseline.resident
+        let worstLive = after.map(\.live).max() ?? baseline.live
         let worstDescriptors = after.map(\.descriptors).max() ?? baseline.descriptors
-        let residentGrowth = Double(worstResident - baseline.resident) / Double(baseline.resident)
-        recordMeasurement("soak result", "sessions=\(sessions.withLockedValue { $0 }) cycles=\(samples.count) baseline resident=\(baseline.resident / 1024) KiB fds=\(baseline.descriptors); worst after warm-up resident=\(worstResident / 1024) KiB (growth \(residentGrowth * 100)%) fds=\(worstDescriptors) (growth \(worstDescriptors - baseline.descriptors)); last resident=\((samples.last?.resident ?? 0) / 1024) KiB")
-        #expect(residentGrowth <= Self.residentGrowthLimit, "resident memory grew \(residentGrowth * 100)% after warm-up (limit \(Self.residentGrowthLimit * 100)%)")
+        let liveGrowth = Double(worstLive - baseline.live) / Double(max(baseline.live, 1))
+        recordMeasurement("soak result", "sessions=\(sessions.withLockedValue { $0 }) cycles=\(samples.count) baseline live=\(baseline.live / 1024) KiB fds=\(baseline.descriptors); worst after warm-up live=\(worstLive / 1024) KiB (growth \(liveGrowth * 100)%) peak-resident=\(worstResident / 1024) KiB (not asserted) fds=\(worstDescriptors) (growth \(worstDescriptors - baseline.descriptors)); last resident=\((samples.last?.resident ?? 0) / 1024) KiB")
+        #expect(liveGrowth <= Self.liveGrowthLimit, "live heap grew \(liveGrowth * 100)% after warm-up (limit \(Self.liveGrowthLimit * 100)%)")
         #expect(worstDescriptors - baseline.descriptors <= Self.descriptorGrowthLimit, "open descriptors grew by \(worstDescriptors - baseline.descriptors) after warm-up (limit \(Self.descriptorGrowthLimit))")
     }
 }

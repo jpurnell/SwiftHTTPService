@@ -4,7 +4,7 @@
 # Runs the soak test for SECONDS (default 60): many connections that open, are abused (a head dribbled and dropped, a
 # body cut off, a streaming response abandoned, a half-close, malformed bytes, a stalled reader, an HTTP/2 stream
 # abandoned) and close, against a plaintext and a TLS server in this process. At a quiet point after every cycle it
-# samples the process's resident memory and open descriptors, and fails if either grows past the limits stated in
+# samples the process's live heap (the allocator's own count, not the peak resident size) and open descriptors, and fails if either grows past the limits stated in
 # Tests/SwiftHTTPServiceNIOTests/SoakTests.swift after the first three cycles (warm-up).
 #
 # The samples are printed as RIG-MEASURE lines. For days, not a minute, run it with a large SECONDS under nohup.
