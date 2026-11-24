@@ -2,7 +2,7 @@
 
 A small, safe kit for serving a JSON API over HTTP/1.1 and TLS.
 
-**Status:** 1.0.0 (2026-11-23), private, feature complete for the workspace's hand-rolled servers; the API is frozen for the 1.0 line
+**Status:** 1.1.0 (2026-11-23), private, feature complete for the workspace's hand-rolled servers; the API is frozen for the 1.0 line
 and follows semantic versioning from here. How it got here (the API audit, an independent review, a multi-day soak, the beta in the consumers) is
 in `project/master_plan.md`. The core (request, response, problem, middleware, router, conditional requests, health route,
 validated configuration, forms, cookies, redirects, streaming) and the transport (HTTP/1.1, and HTTP/2 over TLS, with

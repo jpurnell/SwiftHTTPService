@@ -6,8 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-23
+
 ### Changed
-- **swift-crypto minimum is 5.1.2, through SwiftTLSKit 1.1.0** (`.upToNextMinor(from: "1.1.0")`; was `from: "1.0.0"`). SwiftTLSKit 1.0.x capped swift-crypto below 5.0, so no package that used this kit could take swift-crypto 5. The owner's rule (2026-11-23): the whole stack stays on the newest swift-crypto, a crypto release usually being a security fix. **A package that depends on SwiftHTTPService 1.1.0 must itself allow swift-crypto 5.1.2 or later.** No source or public API change (the API-freeze check against v1.0.0 passes); 250 and 343 tests pass on swift-crypto 5.1.2. 1.0.0 stays valid for a package that cannot move yet.
+- **swift-crypto minimum is 5.1.2, through SwiftTLSKit 1.1.0** (`.upToNextMinor(from: "1.1.0")`; was `from: "1.0.0"`). SwiftTLSKit 1.0.x capped swift-crypto below 5.0, so no package that used this kit could take swift-crypto 5. The owner's rule (2026-11-23): the whole stack stays on the newest swift-crypto, a crypto release usually being a security fix. **A package that depends on SwiftHTTPService 1.1.0 must itself allow swift-crypto 5.1.2 or later.** No source or public API change (the API-freeze check against v1.0.0 passes); 250 and 343 tests pass on swift-crypto 5.1.2, and CI is green on macOS and Linux. 1.0.0 stays valid for a package that cannot move yet.
 
 ## [1.0.0] - 2026-11-23
 
@@ -595,7 +597,8 @@ First release: the core, the HTTP/1.1 transport and TLS through SwiftTLSKit.
   `../SwiftTLSKit`: the package now resolves on its own. SwiftTLSKit needed no new tag; 0.2.1 is the pin.
 - Adding `swift-nio-extras` resolves `swift-service-lifecycle` into the lockfile even though nothing links it.
 
-[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.5...v1.0.0
 [1.0.0-beta.5]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.4...v1.0.0-beta.5
 [1.0.0-beta.4]: https://github.com/jpurnell/SwiftHTTPService/compare/v1.0.0-beta.3...v1.0.0-beta.4
