@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **swift-crypto minimum is 5.1.2, through SwiftTLSKit 1.1.0** (`.upToNextMinor(from: "1.1.0")`; was `from: "1.0.0"`). SwiftTLSKit 1.0.x capped swift-crypto below 5.0, so no package that used this kit could take swift-crypto 5. The owner's rule (2026-11-23): the whole stack stays on the newest swift-crypto, a crypto release usually being a security fix. **A package that depends on SwiftHTTPService 1.1.0 must itself allow swift-crypto 5.1.2 or later.** No source or public API change (the API-freeze check against v1.0.0 passes); 250 and 343 tests pass on swift-crypto 5.1.2. 1.0.0 stays valid for a package that cannot move yet.
+
 ## [1.0.0] - 2026-11-23
 
 The first stable release. **No source change since `v1.0.0-beta.5`**: the API is the beta's, frozen for the 1.0 line, and from here a breaking change needs 2.0.0. The criteria in `project/master_plan.md` ("Toward 1.0.0") are met: the API audit and freeze, SwiftTLSKit 1.0, an independent review of the proxy, redirect and cookie rules (an AI reviewer, not a person outside the project), green CI on Linux and macOS, the multi-day soak (recorded below), and the beta in the four consumers. **The owner waived the week of beta.5 in the consumers on 2026-11-23**, as for beta.4: it had been deployed since 2026-11-22 and checked from outside (SwiftPenTest's `HeadersChecker` against all four live services).

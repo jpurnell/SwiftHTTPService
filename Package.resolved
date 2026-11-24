@@ -1,5 +1,5 @@
 {
-  "originHash" : "6fe4c6daaab6d1fa381a21780cb858b9b021574bce21e86e97c0429b4260238e",
+  "originHash" : "54797d4899446ca067c0981e1cec2dc4a729e2f9cc8fc6f5279266b10bfe8d5e",
   "pins" : [
     {
       "identity" : "swift-algorithms",
@@ -60,8 +60,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-crypto.git",
       "state" : {
-        "revision" : "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
-        "version" : "4.5.2"
+        "revision" : "3280a5f72874d2f73bf25551bbb64f524c76d834",
+        "version" : "5.1.2"
       }
     },
     {
@@ -177,8 +177,8 @@
       "kind" : "remoteSourceControl",
       "location" : "git@github.com:jpurnell/SwiftTLSKit.git",
       "state" : {
-        "revision" : "d8b33fd070ab18f49c9bfb7937f1458ab60af31f",
-        "version" : "1.0.0"
+        "revision" : "296242c2f9fb764434556427fe80ab70425a97c4",
+        "version" : "1.1.0"
       }
     }
   ],

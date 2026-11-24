@@ -130,7 +130,7 @@ function for a server that does not use this transport. These headers harden bro
 
 The core needs `swift-http-types` and nothing else. The transport adds Apple's `swift-nio` and
 `swift-nio-extras` (for `ServerQuiescingHelper`, which does the graceful shutdown), `swift-nio-http2` and the owner's
-**SwiftTLSKit** (`1.0.0-beta.1`, by URL, pinned exactly; private), of the transport target only.
+**SwiftTLSKit** (`1.1.0`, by URL, up to the next minor; private), of the transport target only. Its swift-crypto minimum is 5.1.2, which is therefore this package's.
 Resolving `swift-nio-extras` also resolves its own dependencies, one of which, `swift-service-lifecycle`, is
 the Swift Server Workgroup's and not Apple's; nothing in this package links it.
 
